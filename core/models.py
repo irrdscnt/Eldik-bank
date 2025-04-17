@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, EmailField, IntField, EnumField, DateTimeField
+from mongoengine import Document, StringField, EmailField, IntField, EnumField, DateTimeField, ListField
 from enum import Enum
 from mongoengine import ReferenceField
 
@@ -31,7 +31,7 @@ class Request(Document):
     user = ReferenceField(User, reverse_delete_rule=2)  # CASCADE
     status = IntField(choices=STATUS_CHOICES, default=0)  # Значение по умолчанию: 0
     comments = StringField(null=True,default=0)
-
+    routes = ListField(ReferenceField('Route'))
     def __str__(self):
         return f"Request by {self.user.name}"
     
