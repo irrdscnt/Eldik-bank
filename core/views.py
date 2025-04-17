@@ -99,3 +99,52 @@ class RequestDetail(APIView):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RouteList(APIView):
+    def get(self, request):
+        routes = Route.objects.all()
+        serializer = RouteSerializer(routes, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = RouteSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RouteDetail(APIView):
+    def get_object(self, pk):
+        try:
+            return Route.objects.get(pk=pk)
+        except Route.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        route = self.get_object(pk)
+        if route is None:
+            return Response({"detail": "Route not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = RouteSerializer(route)
+        return Response(serializer.data)
+
+    def put(self, request, pk):
+        route = self.get_object(pk)
+        if route is None:
+            return Response({"detail": "Route not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = RouteSerializer(route, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, pk):
+        route = self.get_object(pk)
+        if route is None:
+            return Response({"detail": "Route not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = RouteSerializer(route, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

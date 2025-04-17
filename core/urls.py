@@ -6,5 +6,6 @@ urlpatterns = [
     path('users/<str:pk>/', UserDetail.as_view(), name='user-detail'),
     path('requests/',RequestList.as_view(),name='request-list'),
     path('requests/<str:pk>/', RequestDetail.as_view(), name='request-detail'),
-
+    path('routes/', RouteList.as_view(), name='route-list'),
+    path('routes/<str:pk>/', RouteDetail.as_view(), name='route-detail'),
 ]

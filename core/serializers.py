@@ -15,25 +15,37 @@ class UserSerializer(serializers.Serializer):
         validated_data['password'] = make_password(validated_data['password'])
         return User.objects.create(**validated_data)
 
+from bson import ObjectId
 
 class RouteSerializer(serializers.Serializer):
+    id = serializers.CharField(read_only=True)
     departure = serializers.CharField(required=False, allow_blank=True)
     destination = serializers.CharField(required=False, allow_blank=True)
     waiting_time = serializers.IntegerField(required=False, allow_null=True)
     time = serializers.IntegerField(required=False, allow_null=True)
 
+    # вместо полной сериализации Request, просто передаём ID
+    request = serializers.CharField(required=False, allow_null=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['request'] = str(instance.request.id) if instance.request else None
+        return data
+
     def create(self, validated_data):
+        request_id = validated_data.pop("request", None)
+        if request_id:
+            validated_data["request"] = Request.objects.get(id=ObjectId(request_id))
         return Route.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
-        instance.departure = validated_data.get('departure', instance.departure)
-        instance.destination = validated_data.get('destination', instance.destination)
-        instance.waiting_time = validated_data.get('waiting_time', instance.waiting_time)
-        instance.request = validated_data.get('request', instance.request)
-        instance.time = validated_data.get('time', instance.time)
+        if "request" in validated_data:
+            request_id = validated_data.pop("request")
+            validated_data["request"] = Request.objects.get(id=ObjectId(request_id))
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save()
         return instance
-
 
 class RequestSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
