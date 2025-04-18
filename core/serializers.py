@@ -23,7 +23,8 @@ class RouteSerializer(serializers.Serializer):
     destination = serializers.CharField(required=False, allow_blank=True)
     waiting_time = serializers.IntegerField(required=False, allow_null=True)
     time = serializers.IntegerField(required=False, allow_null=True)
-
+    usage_count = serializers.IntegerField(read_only=True)
+    is_frequent = serializers.BooleanField(read_only=True)
     # вместо полной сериализации Request, просто передаём ID
     request = serializers.CharField(required=False, allow_null=True)
 
