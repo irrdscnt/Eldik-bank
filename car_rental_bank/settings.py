@@ -95,8 +95,8 @@ from mongoengine import connect
 
 # Подключение к MongoDB
 connect(
-    db='Car-Rental',  # Имя базы данных
-    host='mongodb+srv://lailievaikanysh:aRalg7pK0KQqPZdT@car-rental.ywd48yn.mongodb.net/?retryWrites=true&w=majority&appName=Car-Rental'
+    db=config('MONGO_DB_NAME'),  
+    host=config('MONGO_DB_URI')  
 )
 # Password validation
 # https://docs.djangoproject.com/en/3.2/ref/settings/#auth-password-validators
