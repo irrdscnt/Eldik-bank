@@ -6,19 +6,37 @@ from core.models import *
 from core.serializers import *
 from django.core.mail import send_mail
 from django.contrib.auth.hashers import make_password, check_password
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from rest_framework.generics import GenericAPIView,ListAPIView
+
 
 class UserList(APIView):
+    @swagger_auto_schema(
+        operation_description="Получает список всех пользователей.",
+        responses={200: UserSerializer(many=True)}
+    )
     def get(self, request):
         users = User.objects.all()
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
 
+    @swagger_auto_schema(
+        operation_description="Создает нового пользователя оставим для админа",
+        request_body=UserSerializer,
+        responses={
+            201: UserSerializer,
+            400: 'Ошибка валидации данных'
+        }
+    )
     def post(self, request):
         serializer = UserSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class UserDetail(APIView):
@@ -81,6 +99,21 @@ class EmailVerification(Document):
         self.code = str(random.randint(100000, 999999))
 
 class RegisterUser(APIView):
+    @swagger_auto_schema(
+        operation_description="Регистрирует нового пользователя. Отправляет код подтверждения на email.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'name', 'number', 'password', 'role'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email'),
+                'name': openapi.Schema(type=openapi.TYPE_STRING),
+                'number': openapi.Schema(type=openapi.TYPE_STRING),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format='password'),
+                'role': openapi.Schema(type=openapi.TYPE_STRING, example='user'),
+            },
+        ),
+        responses={200: 'Verification code sent to email', 400: 'Validation error'},
+    )
     def post(self, request):
         data = request.data
 
@@ -97,7 +130,7 @@ class RegisterUser(APIView):
             email=data['email'],
             name=data['name'],
             number=data['number'],
-            password=make_password(data['password'])  # Хэшируем сразу
+            password=make_password(data['password'])  
         )
         verification.generate_code()
         verification.save()
@@ -112,6 +145,23 @@ class RegisterUser(APIView):
         return Response({"detail": "Verification code sent to email."}, status=200)
 
 class ConfirmRegistration(APIView):
+    @swagger_auto_schema(
+        operation_description="Подтверждает регистрацию по коду, отправленному на email.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'code'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description="Email пользователя"),
+                'code': openapi.Schema(type=openapi.TYPE_STRING, description="Код подтверждения"),
+            }
+        ),
+        responses={
+            200: openapi.Response(description="User registered successfully."),
+            400: openapi.Response(description="Invalid or already used code / Missing fields"),
+        },
+        operation_summary="Подтверждение регистрации путем получения кода на почту"
+        
+    )
     def post(self, request):
         code = request.data.get('code')
         email = request.data.get('email')
@@ -138,6 +188,10 @@ class ConfirmRegistration(APIView):
         return Response({"detail": "User registered successfully."})
 
 class LoginView(APIView):
+    @swagger_auto_schema(
+        request_body=LoginSerializer,
+        responses={200: LoginResponseSerializer, 400: 'Bad Request', 401: 'Unauthorized', 404: 'Not Found'}
+    )
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
@@ -159,7 +213,12 @@ class LoginView(APIView):
             "role": user.role.value
         }, status=status.HTTP_200_OK)
 
+
 class ForgotPasswordView(APIView):
+    @swagger_auto_schema(
+        request_body=ForgotPasswordSerializer,
+        responses={200: ForgotPasswordResponseSerializer, 404: 'User not found', 400: 'Bad Request'}
+    )
     def post(self, request):
         email = request.data.get('email')
         if not email:
@@ -181,7 +240,13 @@ class ForgotPasswordView(APIView):
         )
 
         return Response({"detail": "Reset code sent to email."}, status=200)
+    
 class ResetPasswordView(APIView):
+    @swagger_auto_schema(
+        request_body=ResetPasswordSerializer,
+        responses={200: ResetPasswordResponseSerializer, 400: 'Bad Request'},
+        operation_summary="Сброс пароля"
+    )
     def post(self, request):
         email = request.data.get('email')
         code = request.data.get('code')
@@ -206,19 +271,61 @@ class ResetPasswordView(APIView):
 
         return Response({"detail": "Password reset successful."}, status=200)
 
-class RequestList(APIView):
-    def get(self, request):
-        requests = Request.objects.all()
-        serializer = RequestSerializer(requests, many=True)
-        return Response(serializer.data)
+# class RequestList(APIView):
+#     def get(self, request):
+#         requests = Request.objects.all()
+#         serializer = RequestSerializer(requests, many=True)
+#         return Response(serializer.data)
 
+#     def post(self, request):
+#         serializer = RequestSerializer(data=request.data)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data, status=status.HTTP_201_CREATED)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RequestCreateView(APIView):
+    @swagger_auto_schema(
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
+            'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
+            'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
+            'routes': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Items(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
+                        'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
+                        'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
+                        'time': openapi.Schema(type=openapi.TYPE_INTEGER, example=40),
+                    }
+                )
+            ),
+        },
+        required=['user']
+    ),
+    responses={201: RequestCreateSerializer},
+    operation_summary="Создание заявки с маршрутами",
+    operation_description="Создает новую заявку с маршрутами. `comments` и `status` будут пустыми."
+)
     def post(self, request):
-        serializer = RequestSerializer(data=request.data)
+        serializer = RequestCreateSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            instance = serializer.save()
+            return Response(RequestCreateSerializer(instance).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class RequestListView(GenericAPIView):
+    serializer_class = RequestSerializer
+
+    def get(self, request):
+        requests = Request.objects.all()
+        serializer = self.get_serializer(requests, many=True)
+        return Response(serializer.data)
 
 class RequestDetail(APIView):
     def get_object(self, pk):
@@ -261,11 +368,44 @@ class RouteList(APIView):
         serializer = RouteSerializer(routes, many=True)
         return Response(serializer.data)
 
+
+class CreateRouteWithRequestView(APIView):
+    @swagger_auto_schema(
+        operation_summary="Создать маршрут с привязкой к заявке (с подсчётом usage_count)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['departure', 'destination', 'request'],
+            properties={
+                'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
+                'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
+                'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
+                'time': openapi.Schema(type=openapi.TYPE_INTEGER, example=40),
+                'request': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f")
+            }
+        ),
+        responses={201: RouteSerializer}
+    )
     def post(self, request):
-        serializer = RouteSerializer(data=request.data)
+        data = request.data
+        departure = data.get("departure")
+        destination = data.get("destination")
+
+        # Найти все маршруты с таким же departure + destination
+        existing_routes = Route.objects(departure=departure, destination=destination)
+
+        usage_count = existing_routes.count() + 1  # сколько раз уже использовался этот маршрут
+
+        # Преобразовать request id
+        request_id = data.get("request")
+        if request_id:
+            data["request"] = str(request_id)
+
+        serializer = RouteSerializer(data=data)
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            route = serializer.save()
+            route.usage_count = usage_count
+            route.save()
+            return Response(RouteSerializer(route).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -302,6 +442,25 @@ class RouteDetail(APIView):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk):
+        route = self.get_object(pk)
+        if route is None:
+            return Response({"detail": "Route not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if route.request:
+            try:
+                req = route.request
+                if route in req.routes:
+                    req.routes.remove(route)
+                    req.save()
+            except Exception as e:
+                pass 
+
+        route.delete()
+        return Response({"detail": "Route deleted."}, status=status.HTTP_204_NO_CONTENT)
+
+    
 from collections import Counter, defaultdict
 
 class UserFrequentRoutes(APIView):
@@ -347,8 +506,8 @@ class UserFrequentRoutes(APIView):
 
 from rest_framework.permissions import IsAuthenticated
 from datetime import datetime
+
 class ReportView(APIView):
-    #permission_classes = [IsAuthenticated]
     def get(self, request):
         start_date = request.query_params.get("start")
         end_date = request.query_params.get("end")
@@ -427,3 +586,9 @@ class ReportCSVDownloadView(APIView):
             writer.writerow([driver_id, trip_count])
 
         return response
+
+class FrequentRoutesView(APIView):
+    def get(self, request):
+        routes = Route.objects(usage_count__gt=5).order_by('-usage_count')
+        serializer = RouteSerializer(routes, many=True)
+        return Response(serializer.data)

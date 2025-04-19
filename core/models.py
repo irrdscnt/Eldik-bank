@@ -8,6 +8,7 @@ class Role(Enum):
     USER = 'user'
     ADMIN = 'admin'
     DRIVER = 'driver'
+    DISPETCHER='dispetcher'
 
 class User(Document):
     name = StringField(max_length=255, null=True)
@@ -19,12 +20,11 @@ class User(Document):
     def __str__(self):
         return self.name
     def get_frequent_routes(self):
-        # Получаем все запросы пользователя
         requests = Request.objects(user=self)
         frequent_routes = set()
         for request in requests:
             for route in request.routes:
-                if route.is_frequent:  # Фильтруем только постоянные маршруты
+                if route.is_frequent:  
                     frequent_routes.add(route)
         return list(frequent_routes)
 import random
@@ -50,9 +50,9 @@ class Request(Document):
     )
 
     goal = StringField(null=True)
-    date = DateTimeField(null=True)
+    date = DateField(null=True)
     user = ReferenceField(User, reverse_delete_rule=2)  # CASCADE
-    status = IntField(choices=STATUS_CHOICES, default=0)  # Значение по умолчанию: 0
+    status = IntField(choices=STATUS_CHOICES, default=0) 
     comments = StringField(null=True,default=0)
     routes = ListField(ReferenceField('Route'))
     def __str__(self):
@@ -87,8 +87,7 @@ class Route(Document):
     waiting_time = IntField(null=True)
     request = ReferenceField(Request, reverse_delete_rule=2)  # CASCADE
     time = IntField(null=True)
-    usage_count = IntField(default=0)  # Счетчик использования маршрута
-    is_frequent = BooleanField(default=False)  # Пометка о том, является ли маршрут постоянным
+    usage_count = IntField(default=0)  
 
     def __str__(self):
         return f"Route from {self.departure} to {self.destination}"
@@ -107,5 +106,5 @@ class Trip(Document):
     def update_route_usage(self):
         """Увеличивает счетчик использования маршрута."""
         self.route.update(inc__usage_count=1)
-        self.route.reload()  # Перезагружаем объект маршрута
-        self.route.mark_as_frequent()  # Проверяем, стал ли маршрут постоянным
+        self.route.reload() 
+        self.route.mark_as_frequent()  
