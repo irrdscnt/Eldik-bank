@@ -319,11 +319,20 @@ class RequestCreateView(APIView):
             return Response(RequestCreateSerializer(instance).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# class RequestListView(GenericAPIView):
+#     serializer_class = RequestSerializer
+
+#     def get(self, request):
+#         requests = Request.objects.all()
+#         serializer = self.get_serializer(requests, many=True)
+#         return Response(serializer.data)
+
 class RequestListView(GenericAPIView):
     serializer_class = RequestSerializer
+    queryset = Request.objects.all()  # <== добавь это
 
     def get(self, request):
-        requests = Request.objects.all()
+        requests = self.get_queryset()  # или Request.objects.all()
         serializer = self.get_serializer(requests, many=True)
         return Response(serializer.data)
 
