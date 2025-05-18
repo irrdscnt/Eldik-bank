@@ -20,4 +20,10 @@ urlpatterns = [
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
     path('report/', ReportView.as_view(), name='report'),
     path('report/csv/', ReportCSVDownloadView.as_view(), name='report-csv'),
+    path('cars/', CarListCreateAPIView.as_view(), name='car-list-create'),
+    path('cars/<str:pk>/', CarDetailAPIView.as_view(), name='car-detail'),
+    path('drivers/', CarUserListCreateAPIView.as_view(), name='car-user-list-create'),
+    path('drivers/<str:pk>/', CarUserDetailAPIView.as_view(), name='car-user-detail'),
+    path('trips/', TripCreateAPIView.as_view(), name='trip-create'),
+    path('trips/<str:pk>/', TripDetailAPIView.as_view(), name='trip-detail'),
 ]

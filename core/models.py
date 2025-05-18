@@ -49,7 +49,7 @@ class Request(Document):
         (3, 'Rejected'),
     )
 
-    goal = StringField(null=True)
+    # goal = StringField(null=True)
     date = DateField(null=True)
     user = ReferenceField(User, reverse_delete_rule=2)  # CASCADE
     status = IntField(choices=STATUS_CHOICES, default=0) 
@@ -73,8 +73,8 @@ class Location(EmbeddedDocument):
     longitude = StringField()
 
 class Car_user(Document):
-    user = ReferenceField(User, reverse_delete_rule=2)  # CASCADE
-    car = ReferenceField(Car, reverse_delete_rule=2)  # CASCADE
+    user = ReferenceField(User, reverse_delete_rule=2) 
+    car = ReferenceField(Car, reverse_delete_rule=2)  
     status = IntField(null=True)
     location_history = ListField(EmbeddedDocumentField(Location))
 
@@ -82,11 +82,12 @@ class Car_user(Document):
         return self.status
 
 class Route(Document):
+    goal = StringField(null=True)
     departure = StringField(max_length=255, null=True)
     destination = StringField(max_length=255, null=True)
-    waiting_time = IntField(null=True)
-    request = ReferenceField(Request, reverse_delete_rule=2)  # CASCADE
-    time = IntField(null=True)
+    # waiting_time = IntField(null=True)
+    request = ReferenceField(Request, reverse_delete_rule=2) 
+    time = StringField(max_length=100, null=True)
     usage_count = IntField(default=0)  
 
     def __str__(self):
@@ -103,8 +104,8 @@ class Trip(Document):
     car_user = ReferenceField(Car_user, reverse_delete_rule=CASCADE)
     end_time = DateTimeField(null=True)
 
-    def update_route_usage(self):
-        """Увеличивает счетчик использования маршрута."""
-        self.route.update(inc__usage_count=1)
-        self.route.reload() 
-        self.route.mark_as_frequent()  
+    # def update_route_usage(self):
+    #     """Увеличивает счетчик использования маршрута."""
+    #     self.route.update(inc__usage_count=1)
+    #     self.route.reload() 
+    #     self.route.mark_as_frequent()  

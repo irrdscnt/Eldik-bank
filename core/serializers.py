@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import User,Trip, Route, Car,Request
+from core.models import *
 from bson import ObjectId
 
 class UserSerializer(serializers.Serializer):
@@ -18,11 +18,12 @@ class UserSerializer(serializers.Serializer):
 from bson import ObjectId
 
 class RouteSerializer(serializers.Serializer):
+    goal = serializers.CharField(required=False, allow_blank=True)
     id = serializers.CharField(read_only=True)
     departure = serializers.CharField(required=False, allow_blank=True)
     destination = serializers.CharField(required=False, allow_blank=True)
-    waiting_time = serializers.IntegerField(required=False, allow_null=True)
-    time = serializers.IntegerField(required=False, allow_null=True)
+    time=serializers.CharField(required=False, allow_blank=True)
+    # waiting_time = serializers.IntegerField(required=False, allow_null=True)
     usage_count = serializers.IntegerField(read_only=True)
     request = serializers.CharField(required=False, allow_null=True)
 
@@ -34,13 +35,13 @@ class RouteSerializer(serializers.Serializer):
     def create(self, validated_data):
         request_id = validated_data.pop("request", None)
         if request_id:
-            validated_data["request"] = Request.objects.get(id=ObjectId(request_id))  # Найдем заявку по ID
+            validated_data["request"] = Request.objects.get(id=ObjectId(request_id)) 
         return Route.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
         if "request" in validated_data:
             request_id = validated_data.pop("request")
-            validated_data["request"] = Request.objects.get(id=ObjectId(request_id))  # Найдем заявку по ID
+            validated_data["request"] = Request.objects.get(id=ObjectId(request_id))
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -48,7 +49,7 @@ class RouteSerializer(serializers.Serializer):
 
 class RequestSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
-    goal = serializers.CharField(required=False, allow_blank=True)
+    # goal = serializers.CharField(required=False, allow_blank=True)
     date = serializers.DateField(required=False, allow_null=True)
     user = serializers.CharField()
     status = serializers.IntegerField(required=False, allow_null=True)
@@ -97,7 +98,7 @@ class RequestSerializer(serializers.Serializer):
 
 class RequestCreateSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
-    goal = serializers.CharField(required=False, allow_blank=True)
+    # goal = serializers.CharField(required=False, allow_blank=True)
     date = serializers.DateField(required=False, allow_null=True)
     user = serializers.CharField()
     routes = RouteSerializer(many=True, required=False)
@@ -133,8 +134,8 @@ class CarSerializer(serializers.Serializer):
     name = serializers.CharField(required=False, allow_blank=True)
     car_type = serializers.CharField(required=False, allow_blank=True)
     number = serializers.CharField(required=False, allow_blank=True)
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())  # Ссылка на пользователя
-    status = serializers.IntegerField(required=False, allow_null=True)
+    # user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())  
+    # status = serializers.IntegerField(required=False, allow_null=True)
 
     def create(self, validated_data):
         return Car.objects.create(**validated_data)
@@ -143,28 +144,90 @@ class CarSerializer(serializers.Serializer):
         instance.name = validated_data.get('name', instance.name)
         instance.car_type = validated_data.get('car_type', instance.car_type)
         instance.number = validated_data.get('number', instance.number)
-        instance.user = validated_data.get('user', instance.user)
-        instance.status = validated_data.get('status', instance.status)
+        # instance.user = validated_data.get('user', instance.user)
+        # instance.status = validated_data.get('status', instance.status)
         instance.save()
         return instance
 
 
 class TripSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
-    route = serializers.PrimaryKeyRelatedField(queryset=Route.objects.all())  # Ссылка на маршрут
-    car = serializers.PrimaryKeyRelatedField(queryset=Car.objects.all())  # Ссылка на автомобиль
+    route = serializers.CharField()  
+    car_user = serializers.CharField()
     end_time = serializers.DateTimeField(required=False, allow_null=True)
 
+    def to_representation(self, instance):
+        return {
+            "id": str(instance.id),
+            "route": str(instance.route.id) if instance.route else None,
+            "car_user": str(instance.car_user.id) if instance.car_user else None,
+            "end_time": instance.end_time,
+        }
+
     def create(self, validated_data):
-        return Trip.objects.create(**validated_data)
+        route_id = validated_data.pop('route')
+        car_user_id = validated_data.pop('car_user')
+        route = Route.objects.get(id=ObjectId(route_id))
+        car_user = Car_user.objects.get(id=ObjectId(car_user_id))
+        return Trip.objects.create(route=route, car_user=car_user, **validated_data)
 
     def update(self, instance, validated_data):
-        instance.route = validated_data.get('route', instance.route)
-        instance.car = validated_data.get('car', instance.car)
-        instance.end_time = validated_data.get('end_time', instance.end_time)
+        if 'route' in validated_data:
+            route_id = validated_data.pop('route')
+            instance.route = Route.objects.get(id=ObjectId(route_id))
+
+        if 'car_user' in validated_data:
+            car_user_id = validated_data.pop('car_user')
+            instance.car_user = Car_user.objects.get(id=ObjectId(car_user_id))
+
+        if 'end_time' in validated_data:
+            instance.end_time = validated_data['end_time']
+
         instance.save()
         return instance
+
     
+class LocationSerializer(serializers.Serializer):
+    latitude = serializers.CharField()
+    longitude = serializers.CharField()
+
+class CarUserSerializer(serializers.Serializer):
+    id = serializers.CharField(read_only=True) 
+    user = serializers.CharField()              
+    car = serializers.CharField()             
+    status = serializers.IntegerField(required=False, allow_null=True)
+    location_history = LocationSerializer(many=True, required=False)
+
+    def create(self, validated_data):
+        user = User.objects.get(id=validated_data['user'])
+        car = Car.objects.get(id=validated_data['car'])
+        location_history = validated_data.get("location_history", [])
+
+        car_user = Car_user.objects.create(
+            user=user,
+            car=car,
+            status=validated_data.get("status"),
+            location_history=location_history
+        )
+        return car_user
+
+    def update(self, instance, validated_data):
+        if 'user' in validated_data:
+            user_id = validated_data.pop('user')
+            instance.user = User.objects.get(id=ObjectId(user_id))
+
+        if 'car' in validated_data:
+            car_id = validated_data.pop('car')
+            instance.car = Car.objects.get(id=ObjectId(car_id))
+        if 'location_history' in validated_data:
+            locations = validated_data.pop('location_history')
+            instance.location_history = [Location(**loc) for loc in locations]
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        instance.save()
+        return instance
+
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()

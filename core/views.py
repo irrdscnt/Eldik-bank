@@ -9,6 +9,9 @@ from django.contrib.auth.hashers import make_password, check_password
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.generics import GenericAPIView,ListAPIView
+from django.shortcuts import get_object_or_404
+from mongoengine.errors import DoesNotExist, ValidationError as MongoValidationError
+from rest_framework.exceptions import NotFound
 
 
 class UserList(APIView):
@@ -290,7 +293,7 @@ class RequestCreateView(APIView):
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
-            'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
+            # 'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
             'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
             'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
             'routes': openapi.Schema(
@@ -298,10 +301,11 @@ class RequestCreateView(APIView):
                 items=openapi.Items(
                     type=openapi.TYPE_OBJECT,
                     properties={
+                        'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
                         'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
                         'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
-                        'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
-                        'time': openapi.Schema(type=openapi.TYPE_INTEGER, example=40),
+                        # 'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
+                        'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
                     }
                 )
             ),
@@ -383,12 +387,13 @@ class CreateRouteWithRequestView(APIView):
         operation_summary="Создать маршрут с привязкой к заявке (с подсчётом usage_count)",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['departure', 'destination', 'request'],
+            required=['goal',' departure', 'destination', 'request'],
             properties={
+                'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
                 'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
                 'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
-                'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
-                'time': openapi.Schema(type=openapi.TYPE_INTEGER, example=40),
+                # 'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
+                'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
                 'request': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f")
             }
         ),
@@ -601,3 +606,178 @@ class FrequentRoutesView(APIView):
         routes = Route.objects(usage_count__gt=5).order_by('-usage_count')
         serializer = RouteSerializer(routes, many=True)
         return Response(serializer.data)
+    
+
+class CarListCreateAPIView(APIView):
+    @swagger_auto_schema(
+        request_body=CarSerializer,
+        responses={201: CarSerializer()}
+    )
+    def post(self, request):
+        serializer = CarSerializer(data=request.data)
+        if serializer.is_valid():
+            car = serializer.save()
+            return Response(CarSerializer(car).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        responses={200: CarSerializer(many=True)}
+    )
+    def get(self, request):
+        cars = Car.objects.all()
+        serializer = CarSerializer(cars, many=True)
+        return Response(serializer.data)
+
+class CarDetailAPIView(APIView):
+    @swagger_auto_schema(
+        responses={200: CarSerializer()}
+    )
+    def get_object(self, pk):
+        try:
+            return Car.objects.get(id=pk)
+        except Car.DoesNotExist:
+            raise NotFound(detail="Car not found", code=404)
+
+    @swagger_auto_schema(
+        request_body=CarSerializer,
+        responses={200: CarSerializer()}
+    )
+    def put(self, request, pk):
+        car = self.get_object(pk)
+        serializer = CarSerializer(car, data=request.data)
+        if serializer.is_valid():
+            updated_car = serializer.save()
+            return Response(CarSerializer(updated_car).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @swagger_auto_schema(
+        responses={204: 'No Content'}
+    )
+    def delete(self, request, pk):
+        car = get_object_or_404(Car, pk=pk)
+        car.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class CarUserListCreateAPIView(APIView):
+    @swagger_auto_schema(
+        request_body=CarUserSerializer,
+        responses={201: CarUserSerializer()}
+    )
+    def post(self, request):
+        serializer = CarUserSerializer(data=request.data)
+        if serializer.is_valid():
+            car_user = serializer.save()
+            return Response(CarUserSerializer(car_user).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(responses={200: CarUserSerializer(many=True)})
+    def get(self, request):
+        car_users = Car_user.objects.all()
+        serializer = CarUserSerializer(car_users, many=True)
+        return Response(serializer.data)
+
+class CarUserDetailAPIView(APIView):
+    def get_object(self, pk):
+        try:
+            return Car_user.objects.get(id=pk)
+        except Car_user.DoesNotExist:
+            raise NotFound("Car_user not found")
+
+    @swagger_auto_schema(responses={200: CarUserSerializer()})
+    def get(self, request, pk):
+        car_user = self.get_object(pk)
+        return Response(CarUserSerializer(car_user).data)
+
+    @swagger_auto_schema(
+        request_body=CarUserSerializer,
+        responses={200: CarUserSerializer()}
+    )
+    def put(self, request, pk):  
+        try:
+            car_user = Car_user.objects.get(id=ObjectId(pk))
+        except Car_user.DoesNotExist:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CarUserSerializer(car_user, data=request.data)
+        if serializer.is_valid():
+            updated = serializer.save()
+            return Response(CarUserSerializer(updated).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @swagger_auto_schema(request_body=CarUserSerializer, responses={200: CarUserSerializer()})
+    def patch(self, request, pk):
+        try:
+            car_user = Car_user.objects.get(id=ObjectId(pk))
+        except Car_user.DoesNotExist:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CarUserSerializer(car_user, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated = serializer.save()
+            return Response(CarUserSerializer(updated).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(responses={204: 'No content'})
+    def delete(self, request, pk):
+        car_user = self.get_object(pk)
+        car_user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class TripCreateAPIView(APIView):
+    @swagger_auto_schema(
+        request_body=TripSerializer,
+        responses={201: TripSerializer()}
+    )
+    def post(self, request):
+        serializer = TripSerializer(data=request.data)
+        if serializer.is_valid():
+            trip = serializer.save()
+            return Response(TripSerializer(trip).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @swagger_auto_schema(responses={200: TripSerializer(many=True)})
+    def get(self, request):
+        trips = Trip.objects.all()
+        serializer = TripSerializer(trips, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class TripDetailAPIView(APIView):
+    def get_object(self, pk):
+        try:
+            return Trip.objects.get(id=ObjectId(pk))
+        except Trip.DoesNotExist:
+            return None
+
+    @swagger_auto_schema(
+        responses={200: TripSerializer()}
+    )
+    def get(self, request, pk):
+        trip = self.get_object(pk)
+        if not trip:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(TripSerializer(trip).data)
+
+    @swagger_auto_schema(
+        request_body=TripSerializer,
+        responses={200: TripSerializer()}
+    )
+    def patch(self, request, pk):
+        trip = self.get_object(pk)
+        if not trip:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = TripSerializer(trip, data=request.data, partial=True)
+        if serializer.is_valid():
+            trip = serializer.save()
+            return Response(TripSerializer(trip).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        responses={204: 'No Content'}
+    )
+    def delete(self, request, pk):
+        trip = self.get_object(pk)
+        if not trip:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        trip.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
