@@ -1,7 +1,19 @@
 from django.urls import path
+from rest_framework import permissions
+from drf_yasg.views import get_schema_view
+from drf_yasg import openapi
 from .views import *
+schema_view = get_schema_view(
+    openapi.Info(
+        title="Car Rental API",
+        default_version='v1',
+        description="API для аренды автомобилей",
+    ),
+    public=True,
+)
 
 urlpatterns = [
+    path('trips/export/', trip_report_export, name='trip-report-export'),
     path('users/', UserList.as_view(), name='user-list'),
     path('users/<str:pk>/', UserDetail.as_view(), name='user-detail'),
     path('register/', RegisterUser. as_view()),

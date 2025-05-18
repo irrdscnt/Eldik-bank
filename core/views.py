@@ -8,10 +8,13 @@ from django.core.mail import send_mail
 from django.contrib.auth.hashers import make_password, check_password
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.generics import GenericAPIView,ListAPIView
 from django.shortcuts import get_object_or_404
 from mongoengine.errors import DoesNotExist, ValidationError as MongoValidationError
 from rest_framework.exceptions import NotFound
+import openpyxl
+from openpyxl.utils import get_column_letter
 
 
 class UserList(APIView):
@@ -781,3 +784,78 @@ class TripDetailAPIView(APIView):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         trip.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+
+import pandas as pd
+from django.http import HttpResponse
+
+@swagger_auto_schema(
+    method='get',
+    operation_description="Генерация отчёта по поездкам с деталями водителей и маршрутов, выгрузка в Excel",
+    responses={200: 'Excel файл с отчётом'}
+)
+@api_view(['GET'])
+def trip_report_export(request):
+    trips = Trip.objects.all()
+    rows = []
+
+    for trip in trips:
+        driver_id = str(trip.car_user.id) if trip.car_user else 'Unknown'
+        driver_name = (
+            getattr(trip.car_user.user, 'name', 'Unknown')
+            if trip.car_user and trip.car_user.user else 'Unknown'
+        )
+
+        route = trip.route
+        route_id = str(route.id) if route else 'Unknown'
+        route_goal = getattr(route, 'goal', 'Unknown') if route else 'Unknown'
+        departure = getattr(route, 'departure', 'Unknown') if route else 'Unknown'
+        destination = getattr(route, 'destination', 'Unknown') if route else 'Unknown'
+
+        request_obj = getattr(route, 'request', None) if route else None
+        trip_date = request_obj.date.strftime('%Y-%m-%d') if request_obj and request_obj.date else 'Unknown'
+        request_user = getattr(request_obj.user, 'name', 'Unknown') if request_obj and request_obj.user else 'Unknown'
+
+        end_time = trip.end_time.strftime('%Y-%m-%d %H:%M:%S') if trip.end_time else 'Unknown'
+
+        rows.append({
+            'trip_id': str(trip.id),
+            'driver_id': driver_id,
+            'driver_name': driver_name,
+            'route_id': route_id,
+            'route_goal': route_goal,
+            'departure': departure,
+            'destination': destination,
+            'trip_date': trip_date,
+            'end_time': end_time,
+            'request_user': request_user,
+        })
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Trip Report"
+
+    headers = [
+        'trip_id', 'driver_id', 'driver_name', 'route_id', 'route_goal',
+        'departure', 'destination', 'trip_date', 'end_time', 'request_user'
+    ]
+    ws.append(headers)
+
+    for row in rows:
+        ws.append([row[h] for h in headers])
+
+    for col_idx, header in enumerate(headers, start=1):
+        max_length = len(header)
+        for row in rows:
+            cell_value = str(row[header]) if row[header] is not None else ''
+            max_length = max(max_length, len(cell_value))
+        adjusted_width = max_length + 2 
+        ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
+
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename=trip_report.xlsx'
+    wb.save(response)
+    return response
