@@ -1,6 +1,11 @@
 from rest_framework import serializers
 from core.models import *
 from bson import ObjectId
+from rest_framework import serializers
+from django.contrib.auth.hashers import make_password
+from bson import ObjectId
+from core.models import User, Role
+
 
 class UserSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
@@ -8,21 +13,46 @@ class UserSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     number = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True)
-    role = serializers.ChoiceField(choices=['user', 'admin', 'driver'], default='user')
+    role = serializers.ChoiceField(choices=['user', 'admin', 'driver', 'dispetcher'], default='user')
+
+    def validate(self, data):
+        if 'role' in data and self.context['request'].user.role != 'admin':
+            raise serializers.ValidationError({"role": "Only admins can change the role."})
+        return data
 
     def create(self, validated_data):
-        from django.contrib.auth.hashers import make_password
         validated_data['password'] = make_password(validated_data['password'])
         return User.objects.create(**validated_data)
 
-from bson import ObjectId
+    def update(self, instance, validated_data):
+        instance.name = validated_data.get('name', instance.name)
+        instance.email = validated_data.get('email', instance.email)
+        instance.number = validated_data.get('number', instance.number)
+        instance.role = validated_data.get('role', instance.role)
+
+        if 'password' in validated_data:
+            instance.password = make_password(validated_data['password'])
+
+        if 'email' in validated_data and validated_data['email'] != instance.email:
+            if User.objects(email=validated_data['email']).exclude(id=instance.id).first():
+                raise serializers.ValidationError({"email": "This email is already in use."})
+
+        instance.save()
+        return instance
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['id'] = str(instance.id)
+        data['role'] = instance.role.value if instance.role else 'user'
+        return data
+
 
 class RouteSerializer(serializers.Serializer):
     goal = serializers.CharField(required=False, allow_blank=True)
     id = serializers.CharField(read_only=True)
     departure = serializers.CharField(required=False, allow_blank=True)
     destination = serializers.CharField(required=False, allow_blank=True)
-    time=serializers.CharField(required=False, allow_blank=True)
+    time = serializers.CharField(required=False, allow_blank=True)
     # waiting_time = serializers.IntegerField(required=False, allow_null=True)
     usage_count = serializers.IntegerField(read_only=True)
     request = serializers.CharField(required=False, allow_null=True)
@@ -35,7 +65,7 @@ class RouteSerializer(serializers.Serializer):
     def create(self, validated_data):
         request_id = validated_data.pop("request", None)
         if request_id:
-            validated_data["request"] = Request.objects.get(id=ObjectId(request_id)) 
+            validated_data["request"] = Request.objects.get(id=ObjectId(request_id))
         return Route.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
@@ -47,6 +77,7 @@ class RouteSerializer(serializers.Serializer):
         instance.save()
         return instance
 
+
 class RequestSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     # goal = serializers.CharField(required=False, allow_blank=True)
@@ -55,7 +86,7 @@ class RequestSerializer(serializers.Serializer):
     status = serializers.IntegerField(required=False, allow_null=True)
     comments = serializers.CharField(required=False, allow_blank=True)
 
-    routes = RouteSerializer(many=True, required=False) 
+    routes = RouteSerializer(many=True, required=False)
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -96,6 +127,7 @@ class RequestSerializer(serializers.Serializer):
         instance.save()
         return instance
 
+
 class RequestCreateSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     # goal = serializers.CharField(required=False, allow_blank=True)
@@ -129,12 +161,14 @@ class RequestCreateSerializer(serializers.Serializer):
 
         return request
 
+
 class CarSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(required=False, allow_blank=True)
     car_type = serializers.CharField(required=False, allow_blank=True)
     number = serializers.CharField(required=False, allow_blank=True)
-    # user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())  
+
+    # user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     # status = serializers.IntegerField(required=False, allow_null=True)
 
     def create(self, validated_data):
@@ -152,7 +186,7 @@ class CarSerializer(serializers.Serializer):
 
 class TripSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
-    route = serializers.CharField()  
+    route = serializers.CharField()
     car_user = serializers.CharField()
     end_time = serializers.DateTimeField(required=False, allow_null=True)
 
@@ -186,15 +220,16 @@ class TripSerializer(serializers.Serializer):
         instance.save()
         return instance
 
-    
+
 class LocationSerializer(serializers.Serializer):
     latitude = serializers.CharField()
     longitude = serializers.CharField()
 
+
 class CarUserSerializer(serializers.Serializer):
-    id = serializers.CharField(read_only=True) 
-    user = serializers.CharField()              
-    car = serializers.CharField()             
+    id = serializers.CharField(read_only=True)
+    user = serializers.CharField()
+    car = serializers.CharField()
     status = serializers.IntegerField(required=False, allow_null=True)
     location_history = LocationSerializer(many=True, required=False)
 
@@ -233,26 +268,32 @@ class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
 
+
 class LoginResponseSerializer(serializers.Serializer):
     access = serializers.CharField()
     refresh = serializers.CharField()
     user = serializers.DictField()
+
 
 class RegisterResponseSerializer(serializers.Serializer):
     access = serializers.CharField()
     refresh = serializers.CharField()
     user = serializers.DictField()
 
+
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
+
 class ForgotPasswordResponseSerializer(serializers.Serializer):
     detail = serializers.CharField()
+
 
 class ResetPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
     code = serializers.CharField()
     new_password = serializers.CharField()
+
 
 class ResetPasswordResponseSerializer(serializers.Serializer):
     detail = serializers.CharField()

@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'core',
+    'mongo_auth',
     'django_filters',
     'corsheaders',
     'drf_yasg'
@@ -88,7 +89,7 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'car_rental_bank.auth_backends.MongoJWTAuthentication',  # Custom backend
     ),
 }
 
@@ -97,10 +98,10 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=90),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
-
-    "AUTH_HEADER_TYPES": ("Bearer",),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',  # Matches mongoengine User model's id (ObjectId)
+    'USER_ID_CLAIM': 'user_id',  # JWT claim for user ID
 }
-
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
 

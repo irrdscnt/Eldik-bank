@@ -9,7 +9,7 @@ from django.contrib.auth.hashers import make_password, check_password
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.generics import GenericAPIView,ListAPIView
+from rest_framework.generics import GenericAPIView, ListAPIView
 from django.shortcuts import get_object_or_404
 from mongoengine.errors import DoesNotExist, ValidationError as MongoValidationError
 from rest_framework.exceptions import NotFound
@@ -19,6 +19,111 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
+from bson import ObjectId, errors as bson_errors
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from bson import ObjectId
+from core.models import User
+from core.serializers import UserSerializer
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
+
+class UserDetail(APIView):
+    permission_classes = [IsAuthenticated]  # Enforce JWT authentication for all methods
+
+    def get_object(self, pk):
+        try:
+            return User.objects.get(id=ObjectId(pk))
+        except (User.DoesNotExist, ObjectId.InvalidId):
+            return None
+
+    @swagger_auto_schema(
+        operation_description="Получить информацию о пользователе по ID",
+        responses={
+            200: UserSerializer,
+            404: "Пользователь не найден"
+        }
+    )
+    def get(self, request, pk):
+        user = self.get_object(pk)
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+
+    @swagger_auto_schema(
+        operation_description="Обновить данные пользователя по ID (только для самого пользователя или админа)",
+        request_body=UserSerializer,
+        responses={
+            200: UserSerializer,
+            400: "Неверные данные",
+            403: "Нет прав на изменение",
+            404: "Пользователь не найден"
+        }
+    )
+    def put(self, request, pk):
+        user = self.get_object(pk)
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if str(user.id) != str(request.user.id) and request.user.role != 'admin':
+            return Response({"detail": "You do not have permission to update this user."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UserSerializer(user, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description="Частично обновить данные пользователя по ID (только для самого пользователя или админа)",
+        request_body=UserSerializer,
+        responses={
+            200: UserSerializer,
+            400: "Неверные данные",
+            403: "Нет прав на изменение",
+            404: "Пользователь не найден"
+        }
+    )
+    def patch(self, request, pk):
+        user = self.get_object(pk)
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if str(user.id) != str(request.user.id) and request.user.role != 'admin':
+            return Response({"detail": "You do not have permission to update this user."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description="Удалить пользователя по ID (только для админа)",
+        responses={
+            204: "Пользователь успешно удален",
+            403: "Нет прав на удаление",
+            404: "Пользователь не найден"
+        }
+    )
+    def delete(self, request, pk):
+        if request.user.role != 'admin':
+            return Response({"detail": "Only admins can delete users."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            user = User.objects.get(id=ObjectId(pk))
+            user.delete()
+            return Response({"detail": "User deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+        except (User.DoesNotExist, ObjectId.InvalidId):
+            return Response({"detail": "User not found or invalid ID."}, status=status.HTTP_404_NOT_FOUND)
+
 
 class UserList(APIView):
     @swagger_auto_schema(
@@ -43,55 +148,12 @@ class UserList(APIView):
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-
-class UserDetail(APIView):
-    def get_object(self, pk):
-        try:
-            return User.objects.get(pk=pk)
-        except User.DoesNotExist:
-            return None
-
-    def get(self, request, pk):
-        user = self.get_object(pk)
-        if user is None:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = UserSerializer(user)
-        return Response(serializer.data)
-
-    def put(self, request, pk):
-        user = self.get_object(pk)
-        if user is None:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = UserSerializer(user, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def patch(self, request, pk):
-        user = self.get_object(pk)
-        if user is None:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = UserSerializer(user, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def delete(self, request, pk):
-        try:
-            user = User.objects.get(id=ObjectId(pk))
-            user.delete()
-            return Response({"detail": "User deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
-        except (User.DoesNotExist, InvalidId):
-            return Response({"detail": "User not found or invalid ID."}, status=status.HTTP_404_NOT_FOUND)
 
 
 from mongoengine import Document, StringField, BooleanField
+
 
 class EmailVerification(Document):
     email = StringField(required=True)
@@ -103,9 +165,11 @@ class EmailVerification(Document):
     number = StringField()
     password = StringField()
     is_reset = BooleanField(default=False)
+
     def generate_code(self):
         import random
         self.code = str(random.randint(100000, 999999))
+
 
 class RegisterUser(APIView):
     @swagger_auto_schema(
@@ -139,7 +203,7 @@ class RegisterUser(APIView):
             email=data['email'],
             name=data['name'],
             number=data['number'],
-            password=make_password(data['password'])  
+            password=make_password(data['password'])
         )
         verification.generate_code()
         verification.save()
@@ -152,6 +216,7 @@ class RegisterUser(APIView):
         )
 
         return Response({"detail": "Verification code sent to email."}, status=200)
+
 
 class ConfirmRegistration(APIView):
     @swagger_auto_schema(
@@ -220,6 +285,7 @@ class ConfirmRegistration(APIView):
             }
         }, status=200)
 
+
 class LoginView(APIView):
     @swagger_auto_schema(
         request_body=LoginSerializer,
@@ -271,6 +337,7 @@ class LoginView(APIView):
             }
         }, status=status.HTTP_200_OK)
 
+
 class RefreshTokenView(APIView):
     @swagger_auto_schema(
         request_body=openapi.Schema(
@@ -303,6 +370,7 @@ class RefreshTokenView(APIView):
         except TokenError as e:
             return Response({"detail": str(e)}, status=400)
 
+
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -332,6 +400,7 @@ class LogoutView(APIView):
         except TokenError as e:
             return Response({"detail": str(e)}, status=400)
 
+
 class ForgotPasswordView(APIView):
     @swagger_auto_schema(
         request_body=ForgotPasswordSerializer,
@@ -358,7 +427,8 @@ class ForgotPasswordView(APIView):
         )
 
         return Response({"detail": "Reset code sent to email."}, status=200)
-    
+
+
 class ResetPasswordView(APIView):
     @swagger_auto_schema(
         request_body=ResetPasswordSerializer,
@@ -389,6 +459,7 @@ class ResetPasswordView(APIView):
 
         return Response({"detail": "Password reset successful."}, status=200)
 
+
 # class RequestList(APIView):
 #     def get(self, request):
 #         requests = Request.objects.all()
@@ -405,38 +476,39 @@ class ResetPasswordView(APIView):
 
 class RequestCreateView(APIView):
     @swagger_auto_schema(
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            # 'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
-            'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
-            'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
-            'routes': openapi.Schema(
-                type=openapi.TYPE_ARRAY,
-                items=openapi.Items(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
-                        'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
-                        'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
-                        # 'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
-                        'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
-                    }
-                )
-            ),
-        },
-        required=['user']
-    ),
-    responses={201: RequestCreateSerializer},
-    operation_summary="Создание заявки с маршрутами",
-    operation_description="Создает новую заявку с маршрутами. `comments` и `status` будут пустыми."
-)
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                # 'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
+                'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
+                'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
+                'routes': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Items(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
+                            'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
+                            'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
+                            # 'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
+                            'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
+                        }
+                    )
+                ),
+            },
+            required=['user']
+        ),
+        responses={201: RequestCreateSerializer},
+        operation_summary="Создание заявки с маршрутами",
+        operation_description="Создает новую заявку с маршрутами. `comments` и `status` будут пустыми."
+    )
     def post(self, request):
         serializer = RequestCreateSerializer(data=request.data)
         if serializer.is_valid():
             instance = serializer.save()
             return Response(RequestCreateSerializer(instance).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 # class RequestListView(GenericAPIView):
 #     serializer_class = RequestSerializer
@@ -454,6 +526,7 @@ class RequestListView(GenericAPIView):
         requests = self.get_queryset()  # или Request.objects.all()
         serializer = self.get_serializer(requests, many=True)
         return Response(serializer.data)
+
 
 class RequestDetail(APIView):
     def get_object(self, pk):
@@ -502,7 +575,7 @@ class CreateRouteWithRequestView(APIView):
         operation_summary="Создать маршрут с привязкой к заявке (с подсчётом usage_count)",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['goal',' departure', 'destination', 'request'],
+            required=['goal', ' departure', 'destination', 'request'],
             properties={
                 'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
                 'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
@@ -571,7 +644,7 @@ class RouteDetail(APIView):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     def delete(self, request, pk):
         route = self.get_object(pk)
         if route is None:
@@ -584,13 +657,14 @@ class RouteDetail(APIView):
                     req.routes.remove(route)
                     req.save()
             except Exception as e:
-                pass 
+                pass
 
         route.delete()
         return Response({"detail": "Route deleted."}, status=status.HTTP_204_NO_CONTENT)
 
-    
+
 from collections import Counter, defaultdict
+
 
 class UserFrequentRoutes(APIView):
     def get(self, request, user_id):
@@ -633,8 +707,10 @@ class UserFrequentRoutes(APIView):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 from rest_framework.permissions import IsAuthenticated
 from datetime import datetime
+
 
 class ReportView(APIView):
     def get(self, request):
@@ -663,12 +739,14 @@ class ReportView(APIView):
             "driver_load": driver_trip_counts,
         })
 
+
 import csv
 from collections import defaultdict
 from datetime import datetime
 from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+
 
 class ReportCSVDownloadView(APIView):
     permission_classes = [IsAuthenticated]
@@ -716,12 +794,13 @@ class ReportCSVDownloadView(APIView):
 
         return response
 
+
 class FrequentRoutesView(APIView):
     def get(self, request):
         routes = Route.objects(usage_count__gt=5).order_by('-usage_count')
         serializer = RouteSerializer(routes, many=True)
         return Response(serializer.data)
-    
+
 
 class CarListCreateAPIView(APIView):
     @swagger_auto_schema(
@@ -742,6 +821,7 @@ class CarListCreateAPIView(APIView):
         cars = Car.objects.all()
         serializer = CarSerializer(cars, many=True)
         return Response(serializer.data)
+
 
 class CarDetailAPIView(APIView):
     @swagger_auto_schema(
@@ -764,7 +844,7 @@ class CarDetailAPIView(APIView):
             updated_car = serializer.save()
             return Response(CarSerializer(updated_car).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @swagger_auto_schema(
         responses={204: 'No Content'}
     )
@@ -772,6 +852,7 @@ class CarDetailAPIView(APIView):
         car = get_object_or_404(Car, pk=pk)
         car.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class CarUserListCreateAPIView(APIView):
     @swagger_auto_schema(
@@ -791,6 +872,7 @@ class CarUserListCreateAPIView(APIView):
         serializer = CarUserSerializer(car_users, many=True)
         return Response(serializer.data)
 
+
 class CarUserDetailAPIView(APIView):
     def get_object(self, pk):
         try:
@@ -807,7 +889,7 @@ class CarUserDetailAPIView(APIView):
         request_body=CarUserSerializer,
         responses={200: CarUserSerializer()}
     )
-    def put(self, request, pk):  
+    def put(self, request, pk):
         try:
             car_user = Car_user.objects.get(id=ObjectId(pk))
         except Car_user.DoesNotExist:
@@ -818,7 +900,7 @@ class CarUserDetailAPIView(APIView):
             updated = serializer.save()
             return Response(CarUserSerializer(updated).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @swagger_auto_schema(request_body=CarUserSerializer, responses={200: CarUserSerializer()})
     def patch(self, request, pk):
         try:
@@ -838,6 +920,7 @@ class CarUserDetailAPIView(APIView):
         car_user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+
 class TripCreateAPIView(APIView):
     @swagger_auto_schema(
         request_body=TripSerializer,
@@ -849,12 +932,13 @@ class TripCreateAPIView(APIView):
             trip = serializer.save()
             return Response(TripSerializer(trip).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @swagger_auto_schema(responses={200: TripSerializer(many=True)})
     def get(self, request):
         trips = Trip.objects.all()
         serializer = TripSerializer(trips, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class TripDetailAPIView(APIView):
     def get_object(self, pk):
@@ -896,10 +980,11 @@ class TripDetailAPIView(APIView):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         trip.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-    
+
 
 import pandas as pd
 from django.http import HttpResponse
+
 
 @swagger_auto_schema(
     method='get',
@@ -961,9 +1046,8 @@ def trip_report_export(request):
         for row in rows:
             cell_value = str(row[header]) if row[header] is not None else ''
             max_length = max(max_length, len(cell_value))
-        adjusted_width = max_length + 2 
+        adjusted_width = max_length + 2
         ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
-
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
