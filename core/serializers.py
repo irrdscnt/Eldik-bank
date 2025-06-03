@@ -234,10 +234,14 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField()
 
 class LoginResponseSerializer(serializers.Serializer):
-    id = serializers.CharField()
-    name = serializers.CharField()
-    email = serializers.EmailField()
-    role = serializers.CharField()
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+    user = serializers.DictField()
+
+class RegisterResponseSerializer(serializers.Serializer):
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+    user = serializers.DictField()
 
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()

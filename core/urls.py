@@ -3,6 +3,9 @@ from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from .views import *
+from rest_framework_simplejwt.views import (
+    TokenRefreshView,
+)
 schema_view = get_schema_view(
     openapi.Info(
         title="Car Rental API",
@@ -13,12 +16,19 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+
+    path('register/', RegisterUser.as_view()),
+    path('confirm/', ConfirmRegistration.as_view()),
+    path('login/', LoginView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('logout/', LogoutView.as_view(), name='logout'),
+
     path('trips/export/', trip_report_export, name='trip-report-export'),
     path('users/', UserList.as_view(), name='user-list'),
     path('users/<str:pk>/', UserDetail.as_view(), name='user-detail'),
-    path('register/', RegisterUser. as_view()),
-    path('confirm/', ConfirmRegistration.as_view()),
-    path('login/', LoginView.as_view()),
+   # path('register/', RegisterUser. as_view()),
+  #  path('confirm/', ConfirmRegistration.as_view()),
+#    path('login/', LoginView.as_view()),
     path('requests/', RequestListView.as_view(), name='request-list'),
     path('requests/create/', RequestCreateView.as_view(), name='request-create'),
     # path('requests/<str:pk>/update-status/', RequestStatusUpdateView.as_view(), name='request-status-update'),

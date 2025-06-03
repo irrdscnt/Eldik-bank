@@ -15,7 +15,10 @@ from mongoengine.errors import DoesNotExist, ValidationError as MongoValidationE
 from rest_framework.exceptions import NotFound
 import openpyxl
 from openpyxl.utils import get_column_letter
-
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated
 
 class UserList(APIView):
     @swagger_auto_schema(
@@ -162,11 +165,22 @@ class ConfirmRegistration(APIView):
             }
         ),
         responses={
-            200: openapi.Response(description="User registered successfully."),
+            200: openapi.Response(description="User registered successfully.", schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'access': openapi.Schema(type=openapi.TYPE_STRING),
+                    'refresh': openapi.Schema(type=openapi.TYPE_STRING),
+                    'user': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+                        'id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING),
+                        'role': openapi.Schema(type=openapi.TYPE_STRING),
+                    })
+                }
+            )),
             400: openapi.Response(description="Invalid or already used code / Missing fields"),
         },
         operation_summary="Подтверждение регистрации путем получения кода на почту"
-        
     )
     def post(self, request):
         code = request.data.get('code')
@@ -191,12 +205,42 @@ class ConfirmRegistration(APIView):
         verification.is_verified = True
         verification.save()
 
-        return Response({"detail": "User registered successfully."})
+        # Generate JWT tokens
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+
+        return Response({
+            'access': access_token,
+            'refresh': str(refresh),
+            'user': {
+                'id': str(user.id),
+                'name': user.name,
+                'email': user.email,
+                'role': user.role.value
+            }
+        }, status=200)
 
 class LoginView(APIView):
     @swagger_auto_schema(
         request_body=LoginSerializer,
-        responses={200: LoginResponseSerializer, 400: 'Bad Request', 401: 'Unauthorized', 404: 'Not Found'}
+        responses={
+            200: openapi.Response(description="Successful login", schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'access': openapi.Schema(type=openapi.TYPE_STRING),
+                    'refresh': openapi.Schema(type=openapi.TYPE_STRING),
+                    'user': openapi.Schema(type=openapi.TYPE_OBJECT, properties={
+                        'id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING),
+                        'role': openapi.Schema(type=openapi.TYPE_STRING),
+                    })
+                }
+            )),
+            400: 'Bad Request',
+            401: 'Unauthorized',
+            404: 'Not Found'
+        }
     )
     def post(self, request):
         email = request.data.get('email')
@@ -212,13 +256,81 @@ class LoginView(APIView):
         if not check_password(password, user.password):
             return Response({"detail": "Incorrect password."}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # Generate JWT tokens
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+
         return Response({
-            "id": str(user.id),
-            "name": user.name,
-            "email": user.email,
-            "role": user.role.value
+            'access': access_token,
+            'refresh': str(refresh),
+            'user': {
+                'id': str(user.id),
+                'name': user.name,
+                'email': user.email,
+                'role': user.role.value
+            }
         }, status=status.HTTP_200_OK)
 
+class RefreshTokenView(APIView):
+    @swagger_auto_schema(
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['refresh'],
+            properties={
+                'refresh': openapi.Schema(type=openapi.TYPE_STRING, description="Refresh token")
+            }
+        ),
+        responses={
+            200: openapi.Response(description="Token refreshed", schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'access': openapi.Schema(type=openapi.TYPE_STRING)
+                }
+            )),
+            400: 'Invalid token'
+        }
+    )
+    def post(self, request):
+        refresh_token = request.data.get('refresh')
+
+        if not refresh_token:
+            return Response({"detail": "Refresh token is required."}, status=400)
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            access_token = str(refresh.access_token)
+            return Response({'access': access_token}, status=200)
+        except TokenError as e:
+            return Response({"detail": str(e)}, status=400)
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['refresh'],
+            properties={
+                'refresh': openapi.Schema(type=openapi.TYPE_STRING, description="Refresh token to blacklist")
+            }
+        ),
+        responses={
+            205: 'Successfully logged out',
+            400: 'Invalid token'
+        }
+    )
+    def post(self, request):
+        refresh_token = request.data.get('refresh')
+
+        if not refresh_token:
+            return Response({"detail": "Refresh token is required."}, status=400)
+
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return Response(status=status.HTTP_205_RESET_CONTENT)
+        except TokenError as e:
+            return Response({"detail": str(e)}, status=400)
 
 class ForgotPasswordView(APIView):
     @swagger_auto_schema(
