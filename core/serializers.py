@@ -5,7 +5,7 @@ from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
 from bson import ObjectId
 from core.models import User, Role
-
+from django.contrib.auth.hashers import check_password
 
 class UserSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
@@ -297,3 +297,27 @@ class ResetPasswordSerializer(serializers.Serializer):
 
 class ResetPasswordResponseSerializer(serializers.Serializer):
     detail = serializers.CharField()
+
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, data):
+        user = self.context['user']
+        old_password = data.get('old_password')
+        new_password = data.get('new_password')
+
+
+        if not check_password(old_password, user.password):
+            raise serializers.ValidationError({"old_password": "Incorrect old password."})
+
+
+        if len(new_password) < 8:
+            raise serializers.ValidationError({"new_password": "New password must be at least 8 characters long."})
+
+        if old_password == new_password:
+            raise serializers.ValidationError({"new_password": "New password must be different from the old password."})
+
+        return data

@@ -1055,3 +1055,35 @@ def trip_report_export(request):
     response['Content-Disposition'] = 'attachment; filename=trip_report.xlsx'
     wb.save(response)
     return response
+
+
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Сменить пароль пользователя по ID (только для самого пользователя)",
+        request_body=ChangePasswordSerializer,
+        responses={
+            200: openapi.Response("Пароль успешно изменён"),
+            400: "Неверные данные или старый пароль",
+            403: "Нет прав на изменение",
+            404: "Пользователь не найден"
+        }
+    )
+    def post(self, request, pk):
+        try:
+            user = User.objects.get(id=ObjectId(pk))
+        except (User.DoesNotExist, ObjectId.InvalidId):
+            return Response({"detail": "User not found or invalid ID."}, status=status.HTTP_404_NOT_FOUND)
+
+        if str(user.id) != str(request.user.id):
+            return Response({"detail": "You do not have permission to change this user's password."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = ChangePasswordSerializer(data=request.data, context={'user': user})
+        if serializer.is_valid():
+            user.password = make_password(serializer.validated_data['new_password'])
+            user.save()
+            return Response({"detail": "Password changed successfully."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
