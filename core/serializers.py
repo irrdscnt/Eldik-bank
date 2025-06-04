@@ -7,6 +7,7 @@ from bson import ObjectId
 from core.models import User, Role
 from django.contrib.auth.hashers import check_password
 
+
 class UserSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(required=False, allow_blank=True)
@@ -16,7 +17,13 @@ class UserSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=['user', 'admin', 'driver', 'dispetcher'], default='user')
 
     def validate(self, data):
-        if 'role' in data and self.context['request'].user.role != 'admin':
+
+        user_role = getattr(self.context['request'].user, 'role', 'user')
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        print(f"Validating role: user_role={user_role}, data={data}")
+
+        if 'role' in data and user_role != 'admin':
             raise serializers.ValidationError({"role": "Only admins can change the role."})
         return data
 

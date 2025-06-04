@@ -32,6 +32,36 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 
+
+class UserList(APIView):
+    @swagger_auto_schema(
+        operation_description="Получает список всех пользователей.",
+        responses={200: UserSerializer(many=True)}
+    )
+    def get(self, request):
+        users = User.objects.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data)
+
+    @swagger_auto_schema(
+        operation_description="Создает нового пользователя (только для админа).",
+        request_body=UserSerializer,
+        responses={
+            201: UserSerializer,
+            400: 'Ошибка валидации данных'
+        }
+    )
+    def post(self, request):
+        serializer = UserSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
 class UserDetail(APIView):
     permission_classes = [IsAuthenticated]  # Enforce JWT authentication for all methods
 
@@ -70,11 +100,16 @@ class UserDetail(APIView):
         if not user:
             return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if str(user.id) != str(request.user.id) and request.user.role != 'admin':
+        user_role = getattr(request.user, 'role', 'user')
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, target_user_id={pk}")  # Debug
+
+        if str(user.id) != str(request.user.id) and user_role != 'admin':
             return Response({"detail": "You do not have permission to update this user."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        serializer = UserSerializer(user, data=request.data)
+        serializer = UserSerializer(user, data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -95,11 +130,16 @@ class UserDetail(APIView):
         if not user:
             return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if str(user.id) != str(request.user.id) and request.user.role != 'admin':
+        user_role = getattr(request.user, 'role', 'user')
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, target_user_id={pk}")  # Debug
+
+        if str(user.id) != str(request.user.id) and user_role != 'admin':
             return Response({"detail": "You do not have permission to update this user."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        serializer = UserSerializer(user, data=request.data, partial=True)
+        serializer = UserSerializer(user, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -114,7 +154,13 @@ class UserDetail(APIView):
         }
     )
     def delete(self, request, pk):
-        if request.user.role != 'admin':
+        # Get user role, handling enum
+        user_role = getattr(request.user, 'role', 'user')
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        print(f"Checking permissions for delete: user_id={request.user.id}, role={user_role}")  # Debug
+
+        if user_role != 'admin':
             return Response({"detail": "Only admins can delete users."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
@@ -174,31 +220,6 @@ class UserTripsView(APIView):
                 {"detail": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-class UserList(APIView):
-    @swagger_auto_schema(
-        operation_description="Получает список всех пользователей.",
-        responses={200: UserSerializer(many=True)}
-    )
-    def get(self, request):
-        users = User.objects.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data)
-
-    @swagger_auto_schema(
-        operation_description="Создает нового пользователя оставим для админа",
-        request_body=UserSerializer,
-        responses={
-            201: UserSerializer,
-            400: 'Ошибка валидации данных'
-        }
-    )
-    def post(self, request):
-        serializer = UserSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 from mongoengine import Document, StringField, BooleanField
