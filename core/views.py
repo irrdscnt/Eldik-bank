@@ -125,6 +125,55 @@ class UserDetail(APIView):
             return Response({"detail": "User not found or invalid ID."}, status=status.HTTP_404_NOT_FOUND)
 
 
+class UserTripsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Получить все маршруты из заявок пользователя по его ID",
+        responses={
+            200: openapi.Response(description="Список маршрутов", schema=openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT))),
+            403: "Нет прав доступа",
+            404: "Пользователь не найден",
+            400: "Неверный формат ID пользователя"
+        }
+    )
+    def get(self, request, user_id):
+        if str(request.user.id) != user_id and request.user.role != 'admin':
+            return Response(
+                {"detail": "You do not have permission to view these routes."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if not ObjectId.is_valid(user_id):
+            return Response(
+                {"detail": "Invalid user ID format."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+
+            user = User.objects.get(id=ObjectId(user_id))
+
+            requests = Request.objects(user=user)
+
+            serializer = RequestSerializer(requests, many=True)
+
+            routes = []
+            for request_data in serializer.data:
+                routes.extend(request_data.get('routes', []))
+
+            return Response(routes, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "User not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 class UserList(APIView):
     @swagger_auto_schema(
         operation_description="Получает список всех пользователей.",

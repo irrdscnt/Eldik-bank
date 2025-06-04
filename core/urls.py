@@ -29,6 +29,10 @@ urlpatterns = [
     path('forgot-password/', ForgotPasswordView.as_view(), name='forgot-password'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
 
+    path('users/<str:user_id>/trips/', UserTripsView.as_view(), name='user-trips'),
+
+
+
 
 
     path('trips/export/', trip_report_export, name='trip-report-export'),
