@@ -32,7 +32,6 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 
-
 class UserList(APIView):
     @swagger_auto_schema(
         operation_description="Получает список всех пользователей.",
@@ -58,8 +57,6 @@ class UserList(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 
 
 class UserDetail(APIView):
@@ -177,7 +174,9 @@ class UserTripsView(APIView):
     @swagger_auto_schema(
         operation_description="Получить все маршруты из заявок пользователя по его ID",
         responses={
-            200: openapi.Response(description="Список маршрутов", schema=openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_OBJECT))),
+            200: openapi.Response(description="Список маршрутов", schema=openapi.Schema(type=openapi.TYPE_ARRAY,
+                                                                                        items=openapi.Schema(
+                                                                                            type=openapi.TYPE_OBJECT))),
             403: "Нет прав доступа",
             404: "Пользователь не найден",
             400: "Неверный формат ID пользователя"
@@ -599,12 +598,21 @@ class RequestListView(GenericAPIView):
 
 
 class RequestDetail(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get_object(self, pk):
         try:
-            return Request.objects.get(pk=pk)
-        except Request.DoesNotExist:
+            return Request.objects.get(id=ObjectId(pk))
+        except (Request.DoesNotExist, ObjectId.InvalidId):
             return None
 
+    @swagger_auto_schema(
+        operation_description="Получить информацию о заявке по ID",
+        responses={
+            200: RequestSerializer,
+            404: "Заявка не найдена"
+        }
+    )
     def get(self, request, pk):
         request_obj = self.get_object(pk)
         if request_obj is None:
@@ -612,21 +620,61 @@ class RequestDetail(APIView):
         serializer = RequestSerializer(request_obj)
         return Response(serializer.data)
 
+    @swagger_auto_schema(
+        operation_description="Полностью обновить заявку по ID (диспетчеры могут менять только статус и комментарии, админы — все поля)",
+        request_body=RequestSerializer,
+        responses={
+            200: RequestSerializer,
+            400: "Неверные данные",
+            403: "Нет прав на изменение",
+            404: "Заявка не найдена"
+        }
+    )
     def put(self, request, pk):
         request_obj = self.get_object(pk)
         if request_obj is None:
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = RequestSerializer(request_obj, data=request.data)
+
+        user_role = getattr(request.user, 'role', 'user')
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, request_id={pk}")  # Debug
+
+        if user_role not in ['dispetcher', 'admin'] and str(request_obj.user.id) != str(request.user.id):
+            return Response({"detail": "You do not have permission to update this request."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        serializer = RequestSerializer(request_obj, data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @swagger_auto_schema(
+        operation_description="Частично обновить заявку по ID (диспетчеры могут менять только статус и комментарии, админы — все поля)",
+        request_body=RequestSerializer,
+        responses={
+            200: RequestSerializer,
+            400: "Неверные данные",
+            403: "Нет прав на изменение",
+            404: "Заявка не найдена"
+        }
+    )
     def patch(self, request, pk):
         request_obj = self.get_object(pk)
         if request_obj is None:
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = RequestSerializer(request_obj, data=request.data, partial=True)
+
+        user_role = getattr(request.user, 'role', 'user')
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, request_id={pk}")  # Debug
+
+        if user_role not in ['dispetcher', 'admin'] and str(request_obj.user.id) != str(request.user.id):
+            return Response({"detail": "You do not have permission to update this request."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        serializer = RequestSerializer(request_obj, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -1127,8 +1175,6 @@ def trip_report_export(request):
     return response
 
 
-
-
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1149,7 +1195,8 @@ class ChangePasswordView(APIView):
             return Response({"detail": "User not found or invalid ID."}, status=status.HTTP_404_NOT_FOUND)
 
         if str(user.id) != str(request.user.id):
-            return Response({"detail": "You do not have permission to change this user's password."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You do not have permission to change this user's password."},
+                            status=status.HTTP_403_FORBIDDEN)
 
         serializer = ChangePasswordSerializer(data=request.data, context={'user': user})
         if serializer.is_valid():

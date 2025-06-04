@@ -87,31 +87,44 @@ class RouteSerializer(serializers.Serializer):
 
 class RequestSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
-    # goal = serializers.CharField(required=False, allow_blank=True)
     date = serializers.DateField(required=False, allow_null=True)
     user = serializers.CharField()
     status = serializers.IntegerField(required=False, allow_null=True)
     comments = serializers.CharField(required=False, allow_blank=True)
-
     routes = RouteSerializer(many=True, required=False)
+
+    def validate(self, data):
+        user_role = getattr(self.context['request'].user, 'role', 'user')
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        print(f"Validating request: user_role={user_role}, data={data}")  # Debug
+
+        if user_role == 'dispetcher':
+
+            allowed_fields = {'status', 'comments'}
+            if any(key not in allowed_fields for key in data):
+                raise serializers.ValidationError({"detail": "Dispatchers can only update status and comments."})
+
+            if data.get('status') == 3:
+                comments = data.get('comments', '').strip()
+                if not comments:
+                    raise serializers.ValidationError({"comments": "Comments are required when rejecting a request."})
+
+        return data
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         status_choices = dict(Request.STATUS_CHOICES)
         representation['status_text'] = status_choices.get(instance.status, "Unknown")
-
         representation["id"] = str(instance.id)
-
         route_objects = Route.objects(request=instance)
         representation['routes'] = RouteSerializer(route_objects, many=True).data
-
         return representation
 
     def create(self, validated_data):
         routes_data = validated_data.pop("routes", [])
         user_id = validated_data.pop("user")
         validated_data["user"] = User.objects.get(id=ObjectId(user_id))
-
         request = Request.objects.create(**validated_data)
 
         route_refs = []
@@ -121,7 +134,6 @@ class RequestSerializer(serializers.Serializer):
 
         request.routes = route_refs
         request.save()
-
         return request
 
     def update(self, instance, validated_data):
@@ -306,7 +318,6 @@ class ResetPasswordResponseSerializer(serializers.Serializer):
     detail = serializers.CharField()
 
 
-
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True, write_only=True)
     new_password = serializers.CharField(required=True, write_only=True)
@@ -316,10 +327,8 @@ class ChangePasswordSerializer(serializers.Serializer):
         old_password = data.get('old_password')
         new_password = data.get('new_password')
 
-
         if not check_password(old_password, user.password):
             raise serializers.ValidationError({"old_password": "Incorrect old password."})
-
 
         if len(new_password) < 8:
             raise serializers.ValidationError({"new_password": "New password must be at least 8 characters long."})
