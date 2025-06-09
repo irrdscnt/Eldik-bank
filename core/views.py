@@ -30,7 +30,7 @@ from core.models import User
 from core.serializers import UserSerializer
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-
+from core.utils import send_push_notification_to_user
 
 class UserList(APIView):
     @swagger_auto_schema(
@@ -606,6 +606,21 @@ class RequestDetail(APIView):
         except (Request.DoesNotExist, ObjectId.InvalidId):
             return None
 
+    def send_status_notification(self, request_obj, new_status):
+        status_choices = dict(Request.STATUS_CHOICES)
+        status_text = status_choices.get(new_status, "Unknown")
+
+        if new_status == 2:  # Completed (Approved)
+            title = "Заявка одобрена"
+            body = f"Ваша заявка от {request_obj.date} была одобрена."
+        elif new_status == 3:  # Rejected
+            title = "Заявка отклонена"
+            body = f"Ваша заявка от {request_obj.date} была отклонена. Причина: {request_obj.comments or 'Не указана'}."
+        else:
+            return
+
+        send_push_notification_to_user(request_obj.user, title, body)
+
     @swagger_auto_schema(
         operation_description="Получить информацию о заявке по ID",
         responses={
@@ -638,7 +653,7 @@ class RequestDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, request_id={pk}")  # Debug
+        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, request_id={pk}")
 
         if user_role not in ['dispetcher', 'admin'] and str(request_obj.user.id) != str(request.user.id):
             return Response({"detail": "You do not have permission to update this request."},
@@ -647,6 +662,8 @@ class RequestDetail(APIView):
         serializer = RequestSerializer(request_obj, data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
+            if 'status' in request.data:
+                self.send_status_notification(request_obj, request.data['status'])
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -668,7 +685,7 @@ class RequestDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, request_id={pk}")  # Debug
+        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, request_id={pk}")
 
         if user_role not in ['dispetcher', 'admin'] and str(request_obj.user.id) != str(request.user.id):
             return Response({"detail": "You do not have permission to update this request."},
@@ -677,9 +694,10 @@ class RequestDetail(APIView):
         serializer = RequestSerializer(request_obj, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
+            if 'status' in request.data:
+                self.send_status_notification(request_obj, request.data['status'])
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class RouteList(APIView):
     def get(self, request):
@@ -1204,3 +1222,30 @@ class ChangePasswordView(APIView):
             user.save()
             return Response({"detail": "Password changed successfully."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SaveFCMTokenView(APIView):
+    permission_classes = [IsAuthenticated]
+
+
+    @swagger_auto_schema(
+        operation_description="Сохранить FCM-токен для пуш-уведомлений",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['fcm_token'],
+            properties={
+                'fcm_token': openapi.Schema(type=openapi.TYPE_STRING, description="FCM Device Token"),
+            }
+        ),
+        responses={
+            200: openapi.Response(description="FCM token saved successfully"),
+            400: "Invalid data",
+        }
+    )
+    def post(self, request):
+        fcm_token = request.data.get('fcm_token')
+        if not fcm_token:
+            return Response({"detail": "FCM token is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        DeviceToken.objects.create(user=request.user, fcm_token=fcm_token)
+        return Response({"detail": "FCM token saved successfully."}, status=status.HTTP_200_OK)

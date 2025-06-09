@@ -6,6 +6,7 @@ from .views import *
 from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
+
 schema_view = get_schema_view(
     openapi.Info(
         title="Car Rental API",
@@ -31,6 +32,7 @@ urlpatterns = [
 
     path('users/<str:user_id>/trips/', UserTripsView.as_view(), name='user-trips'),
 
+    path('save-fcm-token/', SaveFCMTokenView.as_view(), name='save-fcm-token'),
 
 
 

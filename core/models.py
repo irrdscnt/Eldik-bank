@@ -4,6 +4,7 @@ from mongoengine import Document, StringField, EmailField, IntField, EnumField, 
 from enum import Enum
 from mongoengine import ReferenceField
 
+from mongoengine import Document, ReferenceField, StringField, DateTimeField
 
 class Role(Enum):
     USER = 'user'
@@ -126,3 +127,19 @@ class Trip(Document):
     #     self.route.update(inc__usage_count=1)
     #     self.route.reload() 
     #     self.route.mark_as_frequent()
+
+
+
+
+
+class DeviceToken(Document):
+    user = ReferenceField(User, reverse_delete_rule=CASCADE)
+    fcm_token = StringField(required=True)
+    created_at = DateTimeField(default=datetime.utcnow)
+
+    meta = {
+        'indexes': [
+            'user',
+            'fcm_token'
+        ]
+    }
