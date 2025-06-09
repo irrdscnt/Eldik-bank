@@ -9,7 +9,11 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 def send_push_notification_to_user(user, title, body):
-    tokens = DeviceToken.objects(user=user)
+    tokens = DeviceToken.objects.filter(user=user)
+    if not tokens:
+        print(f"No tokens found for user {user}")
+        return
+
     for token in tokens:
         try:
             message = messaging.Message(

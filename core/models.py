@@ -134,7 +134,7 @@ class Trip(Document):
 
 class DeviceToken(Document):
     user = ReferenceField(User, reverse_delete_rule=CASCADE)
-    fcm_token = StringField(required=True)
+    fcm_token = StringField(required=True, unique_with='user')
     created_at = DateTimeField(default=datetime.utcnow)
 
     meta = {

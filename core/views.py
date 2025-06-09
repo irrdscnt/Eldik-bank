@@ -698,6 +698,7 @@ class RequestDetail(APIView):
             return None
 
     def send_status_notification(self, request_obj, new_status):
+        new_status = int(new_status)
         status_choices = dict(Request.STATUS_CHOICES)
         status_text = status_choices.get(new_status, "Unknown")
 
@@ -708,9 +709,10 @@ class RequestDetail(APIView):
             title = "Заявка отклонена"
             body = f"Ваша заявка от {request_obj.date} была отклонена. Причина: {request_obj.comments or 'Не указана'}."
         else:
+            print(f"Статус {new_status} не требует уведомления")
             return
 
-        send_push_notification_to_user(request_obj.user, title, body)
+        return send_push_notification_to_user(request_obj.user, title, body)
 
     @swagger_auto_schema(
         operation_description="Получить информацию о заявке по ID",
@@ -776,7 +778,6 @@ class RequestDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, request_id={pk}")
 
         if user_role not in ['dispetcher', 'admin'] and str(request_obj.user.id) != str(request.user.id):
             return Response({"detail": "You do not have permission to update this request."},
@@ -785,9 +786,11 @@ class RequestDetail(APIView):
         serializer = RequestSerializer(request_obj, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
+
             if 'status' in request.data:
-                self.send_status_notification(request_obj, request.data['status'])
+                self.send_status_notification(serializer.instance, request.data['status'])
             return Response(serializer.data)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
