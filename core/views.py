@@ -31,17 +31,44 @@ from core.serializers import UserSerializer
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from core.utils import send_push_notification_to_user
+from rest_framework.pagination import LimitOffsetPagination
+
+
+class UnlimitedPagination(LimitOffsetPagination):
+    default_limit = 10
+    limit_query_param = 'limit'
+    offset_query_param = 'offset'
+    max_limit = None
+
 
 class UserList(APIView):
+    pagination_class = UnlimitedPagination
+
     @swagger_auto_schema(
         operation_description="Получает список всех пользователей (исключая администраторов).",
-        responses={200: UserSerializer(many=True)}
+        manual_parameters=[
+            openapi.Parameter('limit', openapi.IN_QUERY,
+                              description="Количество элементов на странице",
+                              type=openapi.TYPE_INTEGER),
+            openapi.Parameter('offset', openapi.IN_QUERY,
+                              description="Смещение от начала списка",
+                              type=openapi.TYPE_INTEGER),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Пагинированный список пользователей",
+                schema=UserSerializer(many=True)
+            ),
+            400: "Неверные параметры пагинации"
+        }
     )
     def get(self, request):
-        # Исключаем пользователей с ролью ADMIN
         users = User.objects.filter(role__ne=Role.ADMIN)
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data)
+        paginator = self.pagination_class()
+        result_page = paginator.paginate_queryset(users, request)
+        serializer = UserSerializer(result_page, many=True)
+
+        return paginator.get_paginated_response(serializer.data)
 
     @swagger_auto_schema(
         operation_description="Создает нового пользователя (только для админа).",
@@ -61,7 +88,7 @@ class UserList(APIView):
 
 
 class UserDetail(APIView):
-    permission_classes = [IsAuthenticated]  # Enforce JWT authentication for all methods
+    permission_classes = [IsAuthenticated]
 
     def get_object(self, pk):
         try:
@@ -101,7 +128,7 @@ class UserDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, target_user_id={pk}")  # Debug
+        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, target_user_id={pk}")
 
         if str(user.id) != str(request.user.id) and user_role != 'admin':
             return Response({"detail": "You do not have permission to update this user."},
@@ -131,7 +158,7 @@ class UserDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, target_user_id={pk}")  # Debug
+        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, target_user_id={pk}")
 
         if str(user.id) != str(request.user.id) and user_role != 'admin':
             return Response({"detail": "You do not have permission to update this user."},
@@ -152,11 +179,11 @@ class UserDetail(APIView):
         }
     )
     def delete(self, request, pk):
-        # Get user role, handling enum
+
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions for delete: user_id={request.user.id}, role={user_role}")  # Debug
+        print(f"Checking permissions for delete: user_id={request.user.id}, role={user_role}")
 
         if user_role != 'admin':
             return Response({"detail": "Only admins can delete users."}, status=status.HTTP_403_FORBIDDEN)
@@ -171,13 +198,34 @@ class UserDetail(APIView):
 
 class UserTripsView(APIView):
     permission_classes = [IsAuthenticated]
+    pagination_class = UnlimitedPagination
 
     @swagger_auto_schema(
-        operation_description="Получить все маршруты из заявок пользователя по его ID",
+        operation_description="Получить все маршруты из заявок пользователя по его ID с пагинацией",
+        manual_parameters=[
+            openapi.Parameter('limit', openapi.IN_QUERY,
+                              description="Количество элементов на странице (не ограничено)",
+                              type=openapi.TYPE_INTEGER),
+            openapi.Parameter('offset', openapi.IN_QUERY,
+                              description="Смещение от начала списка",
+                              type=openapi.TYPE_INTEGER),
+        ],
         responses={
-            200: openapi.Response(description="Список маршрутов", schema=openapi.Schema(type=openapi.TYPE_ARRAY,
-                                                                                        items=openapi.Schema(
-                                                                                            type=openapi.TYPE_OBJECT))),
+            200: openapi.Response(
+                description="Пагинированный список маршрутов",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                        )
+                    }
+                )
+            ),
             403: "Нет прав доступа",
             404: "Пользователь не найден",
             400: "Неверный формат ID пользователя"
@@ -197,18 +245,21 @@ class UserTripsView(APIView):
             )
 
         try:
-
             user = User.objects.get(id=ObjectId(user_id))
-
             requests = Request.objects(user=user)
-
             serializer = RequestSerializer(requests, many=True)
 
-            routes = []
+            all_routes = []
             for request_data in serializer.data:
-                routes.extend(request_data.get('routes', []))
+                all_routes.extend(request_data.get('routes', []))
 
-            return Response(routes, status=status.HTTP_200_OK)
+            paginator = self.pagination_class()
+            paginated_routes = paginator.paginate_queryset(all_routes, request)
+
+            if paginated_routes is not None:
+                return paginator.get_paginated_response(paginated_routes)
+
+            return Response(all_routes, status=status.HTTP_200_OK)
 
         except User.DoesNotExist:
             return Response(
@@ -230,7 +281,6 @@ class EmailVerification(Document):
     code = StringField(required=True)
     is_verified = BooleanField(default=False)
 
-    # Храним временные данные регистрации
     name = StringField()
     number = StringField()
     password = StringField()
@@ -340,7 +390,6 @@ class ConfirmRegistration(APIView):
         verification.is_verified = True
         verification.save()
 
-        # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
 
@@ -392,7 +441,6 @@ class LoginView(APIView):
         if not check_password(password, user.password):
             return Response({"detail": "Incorrect password."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
 
@@ -530,26 +578,12 @@ class ResetPasswordView(APIView):
         return Response({"detail": "Password reset successful."}, status=200)
 
 
-# class RequestList(APIView):
-#     def get(self, request):
-#         requests = Request.objects.all()
-#         serializer = RequestSerializer(requests, many=True)
-#         return Response(serializer.data)
-
-#     def post(self, request):
-#         serializer = RequestSerializer(data=request.data)
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data, status=status.HTTP_201_CREATED)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 class RequestCreateView(APIView):
     @swagger_auto_schema(
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
-                # 'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
+
                 'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
                 'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
                 'routes': openapi.Schema(
@@ -560,7 +594,7 @@ class RequestCreateView(APIView):
                             'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
                             'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
                             'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
-                            # 'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
+
                             'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
                         }
                     )
@@ -580,21 +614,55 @@ class RequestCreateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# class RequestListView(GenericAPIView):
-#     serializer_class = RequestSerializer
-
-#     def get(self, request):
-#         requests = Request.objects.all()
-#         serializer = self.get_serializer(requests, many=True)
-#         return Response(serializer.data)
-
 class RequestListView(GenericAPIView):
     serializer_class = RequestSerializer
-    queryset = Request.objects.all()  # <== добавь это
+    queryset = Request.objects.all()
+    pagination_class = UnlimitedPagination
 
-    def get(self, request):
-        requests = self.get_queryset()  # или Request.objects.all()
-        serializer = self.get_serializer(requests, many=True)
+    @swagger_auto_schema(
+        operation_description="Получить список всех заявок с пагинацией",
+        manual_parameters=[
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество элементов на странице (без ограничений)",
+                type=openapi.TYPE_INTEGER
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Смещение от начала списка",
+                type=openapi.TYPE_INTEGER
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Пагинированный список заявок",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Общее количество заявок"),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на следующую страницу"),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING,
+                                                   description="Ссылка на предыдущую страницу"),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT, description="Данные заявки")
+                        )
+                    }
+                )
+            )
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
 
@@ -611,10 +679,10 @@ class RequestDetail(APIView):
         status_choices = dict(Request.STATUS_CHOICES)
         status_text = status_choices.get(new_status, "Unknown")
 
-        if new_status == 2:  # Completed (Approved)
+        if new_status == 2:
             title = "Заявка одобрена"
             body = f"Ваша заявка от {request_obj.date} была одобрена."
-        elif new_status == 3:  # Rejected
+        elif new_status == 3:
             title = "Заявка отклонена"
             body = f"Ваша заявка от {request_obj.date} была отклонена. Причина: {request_obj.comments or 'Не указана'}."
         else:
@@ -700,9 +768,57 @@ class RequestDetail(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class RouteList(APIView):
+    pagination_class = UnlimitedPagination
+
+    @swagger_auto_schema(
+        operation_description="Получить список всех маршрутов с пагинацией",
+        manual_parameters=[
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество элементов на странице (без ограничений)",
+                type=openapi.TYPE_INTEGER
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Смещение от начала списка",
+                type=openapi.TYPE_INTEGER
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Пагинированный список маршрутов",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Items(
+                                type=openapi.TYPE_OBJECT,
+
+                            )
+                        )
+                    }
+                )
+            )
+        }
+    )
     def get(self, request):
         routes = Route.objects.all()
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(routes, request)
+
+        if page is not None:
+            serializer = RouteSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
         serializer = RouteSerializer(routes, many=True)
         return Response(serializer.data)
 
@@ -717,7 +833,7 @@ class CreateRouteWithRequestView(APIView):
                 'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
                 'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
                 'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
-                # 'waiting_time': openapi.Schema(type=openapi.TYPE_INTEGER, example=15),
+
                 'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
                 'request': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f")
             }
@@ -729,12 +845,10 @@ class CreateRouteWithRequestView(APIView):
         departure = data.get("departure")
         destination = data.get("destination")
 
-        # Найти все маршруты с таким же departure + destination
         existing_routes = Route.objects(departure=departure, destination=destination)
 
-        usage_count = existing_routes.count() + 1  # сколько раз уже использовался этот маршрут
+        usage_count = existing_routes.count() + 1
 
-        # Преобразовать request id
         request_id = data.get("request")
         if request_id:
             data["request"] = str(request_id)
@@ -804,11 +918,71 @@ from collections import Counter, defaultdict
 
 
 class UserFrequentRoutes(APIView):
+    pagination_class = UnlimitedPagination
+
+    @swagger_auto_schema(
+        operation_description="Получить самые частые маршруты пользователя",
+        manual_parameters=[
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество возвращаемых маршрутов",
+                type=openapi.TYPE_INTEGER,
+                default=5
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Смещение от начала списка",
+                type=openapi.TYPE_INTEGER,
+                default=0
+            ),
+            openapi.Parameter(
+                'min_count',
+                openapi.IN_QUERY,
+                description="Минимальное количество поездок по маршруту",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Список самых частых маршрутов пользователя",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'departure': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'destination': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'is_frequent': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                }
+                            )
+                        )
+                    }
+                )
+            ),
+            400: "Неверный формат ID пользователя",
+            404: "Пользователь не найден",
+            500: "Внутренняя ошибка сервера"
+        }
+    )
     def get(self, request, user_id):
         if not ObjectId.is_valid(user_id):
             return Response({"detail": "Invalid user ID format."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+
+            min_count = int(request.query_params.get('min_count', 1))
+
             user = User.objects.get(id=ObjectId(user_id))
             requests = Request.objects(user=user)
 
@@ -818,29 +992,30 @@ class UserFrequentRoutes(APIView):
 
             route_groups = defaultdict(list)
             for route in all_routes:
-                key = (route.departure.strip() if route.departure else "",
-                       route.destination.strip() if route.destination else "")
-                route_groups[key].append(route)
+                key = (route.departure.strip().lower() if route.departure else "",
+                       route.destination.strip().lower() if route.destination else "")
+                if key != ("", ""):
+                    route_groups[key].append(route)
 
-            count_map = {k: len(v) for k, v in route_groups.items()}
+            count_map = {k: len(v) for k, v in route_groups.items() if len(v) >= min_count}
 
-            top_routes = []
-            seen_keys = set()
-            for key, _ in sorted(count_map.items(), key=lambda x: x[1], reverse=True):
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
+            sorted_routes = []
+            for key, count in sorted(count_map.items(), key=lambda x: x[1], reverse=True):
                 route = route_groups[key][0]
+                route.usage_count = count
                 route.is_frequent = True
-                top_routes.append(route)
-                if len(top_routes) == 5:
-                    break
+                sorted_routes.append(route)
 
-            serializer = RouteSerializer(top_routes, many=True)
-            return Response(serializer.data)
+            paginator = self.pagination_class()
+            paginated_routes = paginator.paginate_queryset(sorted_routes, request)
+            serializer = RouteSerializer(paginated_routes, many=True)
+
+            return paginator.get_paginated_response(serializer.data)
 
         except User.DoesNotExist:
             return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response({"detail": "Invalid min_count parameter."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -901,7 +1076,6 @@ class ReportCSVDownloadView(APIView):
         except ValueError:
             return Response({"detail": "Invalid date format. Use ISO format."}, status=400)
 
-        # Получаем данные
         requests_in_range = Request.objects(date__gte=start, date__lte=end)
         request_ids = [req.id for req in requests_in_range]
         routes = Route.objects(request__in=request_ids)
@@ -912,7 +1086,6 @@ class ReportCSVDownloadView(APIView):
             if trip.car_user and trip.car_user.user:
                 driver_trip_counts[str(trip.car_user.user.id)] += 1
 
-        # Создаём CSV
         response = HttpResponse(content_type='text/csv')
         filename = f"report_{start.date()}_to_{end.date()}.csv"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -933,16 +1106,118 @@ class ReportCSVDownloadView(APIView):
 
 
 class FrequentRoutesView(APIView):
+    pagination_class = UnlimitedPagination
+
+    @swagger_auto_schema(
+        operation_description="Получить список часто используемых маршрутов (usage_count > 5) с пагинацией",
+        manual_parameters=[
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество элементов на странице",
+                type=openapi.TYPE_INTEGER,
+                default=10
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Смещение от начала списка",
+                type=openapi.TYPE_INTEGER,
+                default=0
+            ),
+            openapi.Parameter(
+                'min_usage',
+                openapi.IN_QUERY,
+                description="Минимальное количество использований для фильтрации (по умолчанию 5)",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Пагинированный список часто используемых маршрутов",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Общее количество маршрутов"),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на следующую страницу"),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING,
+                                                   description="Ссылка на предыдущую страницу"),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+
+                                }
+                            )
+                        )
+                    }
+                )
+            ),
+            400: "Неверные параметры запроса"
+        }
+    )
     def get(self, request):
-        routes = Route.objects(usage_count__gt=5).order_by('-usage_count')
+        min_usage = int(request.query_params.get('min_usage', 5))
+
+        routes = Route.objects(usage_count__gt=min_usage).order_by('-usage_count')
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(routes, request)
+
+        if page is not None:
+            serializer = RouteSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
         serializer = RouteSerializer(routes, many=True)
         return Response(serializer.data)
 
 
 class CarListCreateAPIView(APIView):
+    pagination_class = UnlimitedPagination
+
     @swagger_auto_schema(
+        operation_description="Получить список автомобилей с пагинацией.",
+        manual_parameters=[
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество машин на странице (по умолчанию 10, максимум не ограничен)",
+                type=openapi.TYPE_INTEGER
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Смещение от начала списка (по умолчанию 0)",
+                type=openapi.TYPE_INTEGER
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Пагинированный список автомобилей",
+                schema=CarSerializer(many=True)
+            ),
+            400: "Неверные параметры запроса (например, отрицательный limit/offset)"
+        }
+    )
+    def get(self, request):
+        cars = Car.objects.all()
+        paginator = self.pagination_class()
+        result_page = paginator.paginate_queryset(cars, request)
+        serializer = CarSerializer(result_page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    @swagger_auto_schema(
+        operation_description="Создать новый автомобиль.",
         request_body=CarSerializer,
-        responses={201: CarSerializer()}
+        responses={
+            201: CarSerializer,
+            400: "Ошибка валидации данных"
+        }
     )
     def post(self, request):
         serializer = CarSerializer(data=request.data)
@@ -950,14 +1225,6 @@ class CarListCreateAPIView(APIView):
             car = serializer.save()
             return Response(CarSerializer(car).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(
-        responses={200: CarSerializer(many=True)}
-    )
-    def get(self, request):
-        cars = Car.objects.all()
-        serializer = CarSerializer(cars, many=True)
-        return Response(serializer.data)
 
 
 class CarDetailAPIView(APIView):
@@ -992,9 +1259,46 @@ class CarDetailAPIView(APIView):
 
 
 class CarUserListCreateAPIView(APIView):
+    pagination_class = UnlimitedPagination
+
     @swagger_auto_schema(
+        operation_description="Получить список связей 'Автомобиль-Пользователь' с пагинацией.",
+        manual_parameters=[
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество элементов на странице (по умолчанию 10, максимум не ограничен)",
+                type=openapi.TYPE_INTEGER
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Смещение от начала списка (по умолчанию 0)",
+                type=openapi.TYPE_INTEGER
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Пагинированный список связей 'Автомобиль-Пользователь'",
+                schema=CarUserSerializer(many=True)
+            ),
+            400: "Неверные параметры запроса (например, отрицательный limit/offset)"
+        }
+    )
+    def get(self, request):
+        car_users = Car_user.objects.all()
+        paginator = self.pagination_class()
+        result_page = paginator.paginate_queryset(car_users, request)
+        serializer = CarUserSerializer(result_page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    @swagger_auto_schema(
+        operation_description="Создать новую связь 'Автомобиль-Пользователь'.",
         request_body=CarUserSerializer,
-        responses={201: CarUserSerializer()}
+        responses={
+            201: CarUserSerializer,
+            400: "Ошибка валидации данных"
+        }
     )
     def post(self, request):
         serializer = CarUserSerializer(data=request.data)
@@ -1002,12 +1306,6 @@ class CarUserListCreateAPIView(APIView):
             car_user = serializer.save()
             return Response(CarUserSerializer(car_user).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(responses={200: CarUserSerializer(many=True)})
-    def get(self, request):
-        car_users = Car_user.objects.all()
-        serializer = CarUserSerializer(car_users, many=True)
-        return Response(serializer.data)
 
 
 class CarUserDetailAPIView(APIView):
@@ -1059,9 +1357,46 @@ class CarUserDetailAPIView(APIView):
 
 
 class TripCreateAPIView(APIView):
+    pagination_class = UnlimitedPagination
+
     @swagger_auto_schema(
+        operation_description="Get paginated list of all trips",
+        manual_parameters=[
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Number of items per page (default: 10, max: unlimited)",
+                type=openapi.TYPE_INTEGER
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Number of items to skip (default: 0)",
+                type=openapi.TYPE_INTEGER
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Paginated list of trips",
+                schema=TripSerializer(many=True)
+            ),
+            400: "Invalid pagination parameters"
+        }
+    )
+    def get(self, request):
+        trips = Trip.objects.all()
+        paginator = self.pagination_class()
+        result_page = paginator.paginate_queryset(trips, request)
+        serializer = TripSerializer(result_page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    @swagger_auto_schema(
+        operation_description="Create a new trip",
         request_body=TripSerializer,
-        responses={201: TripSerializer()}
+        responses={
+            201: TripSerializer,
+            400: "Validation error"
+        }
     )
     def post(self, request):
         serializer = TripSerializer(data=request.data)
@@ -1069,12 +1404,6 @@ class TripCreateAPIView(APIView):
             trip = serializer.save()
             return Response(TripSerializer(trip).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(responses={200: TripSerializer(many=True)})
-    def get(self, request):
-        trips = Trip.objects.all()
-        serializer = TripSerializer(trips, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class TripDetailAPIView(APIView):
@@ -1227,7 +1556,6 @@ class ChangePasswordView(APIView):
 
 class SaveFCMTokenView(APIView):
     permission_classes = [IsAuthenticated]
-
 
     @swagger_auto_schema(
         operation_description="Сохранить FCM-токен для пуш-уведомлений",
