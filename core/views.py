@@ -53,6 +53,15 @@ class UserList(APIView):
             openapi.Parameter('offset', openapi.IN_QUERY,
                               description="Смещение от начала списка",
                               type=openapi.TYPE_INTEGER),
+            openapi.Parameter('name', openapi.IN_QUERY,
+                              description="Фильтрация по имени (регистронезависимый поиск)",
+                              type=openapi.TYPE_STRING),
+            openapi.Parameter('email', openapi.IN_QUERY,
+                              description="Фильтрация по email (регистронезависимый поиск)",
+                              type=openapi.TYPE_STRING),
+            openapi.Parameter('role', openapi.IN_QUERY,
+                              description="Фильтрация по роли",
+                              type=openapi.TYPE_STRING),
         ],
         responses={
             200: openapi.Response(
@@ -64,6 +73,19 @@ class UserList(APIView):
     )
     def get(self, request):
         users = User.objects.filter(role__ne=Role.ADMIN)
+
+        name = request.query_params.get('name')
+        if name:
+            users = users.filter(name__icontains=name)
+
+        email = request.query_params.get('email')
+        if email:
+            users = users.filter(email__icontains=email)
+
+        role = request.query_params.get('role')
+        if role:
+            users = users.filter(role=role)
+
         paginator = self.pagination_class()
         result_page = paginator.paginate_queryset(users, request)
         serializer = UserSerializer(result_page, many=True)
@@ -1557,24 +1579,14 @@ class ChangePasswordView(APIView):
 class SaveFCMTokenView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @swagger_auto_schema(
-        operation_description="Сохранить FCM-токен для пуш-уведомлений",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['fcm_token'],
-            properties={
-                'fcm_token': openapi.Schema(type=openapi.TYPE_STRING, description="FCM Device Token"),
-            }
-        ),
-        responses={
-            200: openapi.Response(description="FCM token saved successfully"),
-            400: "Invalid data",
-        }
-    )
     def post(self, request):
         fcm_token = request.data.get('fcm_token')
         if not fcm_token:
-            return Response({"detail": "FCM token is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'FCM token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_token = DeviceToken.objects(user=request.user, fcm_token=fcm_token).first()
+        if existing_token:
+            return Response({'detail': 'FCM token already exists.'}, status=status.HTTP_200_OK)
 
         DeviceToken.objects.create(user=request.user, fcm_token=fcm_token)
-        return Response({"detail": "FCM token saved successfully."}, status=status.HTTP_200_OK)
+        return Response({'detail': 'FCM token saved.'}, status=status.HTTP_201_CREATED)
