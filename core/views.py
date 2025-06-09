@@ -34,11 +34,12 @@ from core.utils import send_push_notification_to_user
 
 class UserList(APIView):
     @swagger_auto_schema(
-        operation_description="Получает список всех пользователей.",
+        operation_description="Получает список всех пользователей (исключая администраторов).",
         responses={200: UserSerializer(many=True)}
     )
     def get(self, request):
-        users = User.objects.all()
+        # Исключаем пользователей с ролью ADMIN
+        users = User.objects.filter(role__ne=Role.ADMIN)
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
 
