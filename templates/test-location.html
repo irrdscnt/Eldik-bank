@@ -1,0 +1,69 @@
+<!-- test_location_map.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Location Tracker with Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map { height: 400px; width: 100%; margin-top: 20px; }
+    </style>
+</head>
+<body>
+<h2>Live Location on Map</h2>
+<label>User ID: <input id="userId" type="text"></label><br>
+<label>Role:
+    <select id="role">
+        <option value="user">User</option>
+        <option value="driver">Driver</option>
+    </select>
+</label><br>
+<label>Latitude: <input id="lat" type="text" value="42.87"></label><br>
+<label>Longitude: <input id="lng" type="text" value="74.61"></label><br>
+<label>Location Description: <input id="location_text" type="text" placeholder="Введите описание"></label><br>
+<button onclick="sendLocation()">Send</button>
+<pre id="output"></pre>
+<div id="map"></div>
+
+<script>
+const socket = new WebSocket("ws://localhost:8000/ws/location/");
+const output = document.getElementById("output");
+const map = L.map('map').setView([42.87, 74.61], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+let marker = null;
+
+socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    output.textContent += "\nПолучено: " + JSON.stringify(data);
+
+    const lat = parseFloat(data.lat);
+    const lng = parseFloat(data.lng);
+
+    if (!isNaN(lat) && !isNaN(lng)) {
+        if (!marker) {
+            marker = L.marker([lat, lng]).addTo(map);
+        } else {
+            marker.setLatLng([lat, lng]);
+        }
+        map.setView([lat, lng]);
+    }
+};
+
+function sendLocation() {
+    const data = {
+        user_id: document.getElementById("userId").value,
+        role: document.getElementById("role").value,
+        lat: document.getElementById("lat").value,
+        lng: document.getElementById("lng").value,
+        location_text: document.getElementById("location_text").value 
+    };
+    socket.send(JSON.stringify(data));
+    output.textContent += "\nОтправлено: " + JSON.stringify(data);
+}
+</script>
+</body>
+</html>

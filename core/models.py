@@ -3,6 +3,7 @@ from datetime import datetime
 from mongoengine import Document, StringField, EmailField, IntField, EnumField, DateTimeField, ListField
 from enum import Enum
 from mongoengine import ReferenceField
+from datetime import datetime, timezone
 
 from mongoengine import Document, ReferenceField, StringField, DateTimeField
 
@@ -143,3 +144,18 @@ class DeviceToken(Document):
             'fcm_token'
         ]
     }
+
+class UserLocation(Document):
+    user = ReferenceField(User, required=True, unique=True)
+    latitude = StringField()
+    longitude = StringField()
+    location_text = StringField()  
+    updated_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
+
+
+class DriverLocation(Document):
+    user = ReferenceField(User, required=True, unique=True)
+    latitude = StringField()
+    longitude = StringField()
+    location_text = StringField()  
+    updated_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
