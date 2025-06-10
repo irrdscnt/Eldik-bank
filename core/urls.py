@@ -36,7 +36,7 @@ urlpatterns = [
 
     path('requests/<str:pk>/assign-driver/', AssignDriverToRequestView.as_view(), name='assign-driver'),
 
-
+    path('requests/user/<user_id>/', UserRequestListView.as_view(), name='user-request-list'),
 
 
     path('trips/export/', trip_report_export, name='trip-report-export'),

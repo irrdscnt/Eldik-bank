@@ -1666,3 +1666,84 @@ class AssignDriverToRequestView(APIView):
 
         serializer = RequestSerializer(request_obj)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+
+class UserRequestListView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = RequestSerializer
+    pagination_class = UnlimitedPagination
+
+    def get_queryset(self, user_id):
+        try:
+            user = User.objects.get(id=ObjectId(user_id))
+            return Request.objects(Q(user=user) | Q(driver=user)).order_by('-date')
+        except (DoesNotExist, ObjectId.InvalidId):
+            return Request.objects.none()
+
+    @swagger_auto_schema(
+        operation_description="Получить список всех заявок, связанных с указанным пользователем (как пользователь или водитель) с пагинацией",
+        manual_parameters=[
+            openapi.Parameter(
+                'user_id',
+                openapi.IN_PATH,
+                description="ID пользователя для фильтрации заявок",
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество элементов на странице (без ограничений)",
+                type=openapi.TYPE_INTEGER
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Смещение от начала списка",
+                type=openapi.TYPE_INTEGER
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Пагинированный список заявок пользователя",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Общее количество заявок"),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на следующую страницу", nullable=True),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на предыдущую страницу", nullable=True),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT, description="Данные заявки")
+                        )
+                    }
+                )
+            ),
+            400: openapi.Response(description="Неверный ID пользователя"),
+            401: openapi.Response(description="Неавторизован"),
+            403: openapi.Response(description="Нет прав доступа")
+        }
+    )
+    def get(self, request, user_id, *args, **kwargs):
+        user_role = getattr(request.user, 'role', 'user')
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+
+        if user_role not in ['dispetcher', 'admin'] and str(request.user.id) != user_id:
+            return Response(
+                {"detail": "You do not have permission to view requests for this user."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            ObjectId(user_id)
+        except ObjectId.InvalidId:
+            return Response({"detail": "Invalid user ID format."}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = self.get_queryset(user_id)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = self.serializer_class(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
