@@ -48,7 +48,9 @@ INSTALLED_APPS = [
     'mongo_auth',
     'django_filters',
     'corsheaders',
-    'drf_yasg'
+    'drf_yasg',
+    'channels',
+    'tracking.apps.TrackingConfig',
 
 ]
 
@@ -65,11 +67,12 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'car_rental_bank.urls'
-
+import os
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],  # <--- добавь сюда
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -81,8 +84,24 @@ TEMPLATES = [
         },
     },
 ]
+# TEMPLATES = [
+#     {
+#         'BACKEND': 'django.template.backends.django.DjangoTemplates',
+#         'DIRS': [],
+#         'APP_DIRS': True,
+#         'OPTIONS': {
+#             'context_processors': [
+#                 'django.template.context_processors.debug',
+#                 'django.template.context_processors.request',
+#                 'django.contrib.auth.context_processors.auth',
+#                 'django.contrib.messages.context_processors.messages',
+#             ],
+#         },
+#     },
+# ]
 
 WSGI_APPLICATION = 'car_rental_bank.wsgi.application'
+ASGI_APPLICATION = 'car_rental_bank.asgi.application'
 
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
@@ -170,3 +189,10 @@ STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
+
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"  # для разработки
+    },
+}

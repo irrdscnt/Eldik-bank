@@ -17,7 +17,7 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
-
+    path('test-location/', test_location_view, name='test_location'),
     path('register/', RegisterUser.as_view()),
     path('confirm/', ConfirmRegistration.as_view()),
     path('login/', LoginView.as_view(), name='token_obtain_pair'),

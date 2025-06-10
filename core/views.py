@@ -32,7 +32,12 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from core.utils import send_push_notification_to_user
 from rest_framework.pagination import LimitOffsetPagination
+from django.shortcuts import render
 
+
+
+def test_location_view(request):
+    return render(request, 'test-location.html')
 
 class UnlimitedPagination(LimitOffsetPagination):
     default_limit = 10
