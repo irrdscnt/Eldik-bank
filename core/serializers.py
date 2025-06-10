@@ -89,6 +89,7 @@ class RequestSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     date = serializers.DateField(required=False, allow_null=True)
     user = serializers.CharField()
+    driver = serializers.CharField(required=False, allow_null=True)
     status = serializers.IntegerField(required=False, allow_null=True)
     comments = serializers.CharField(required=False, allow_blank=True)
     routes = RouteSerializer(many=True, required=False)
@@ -97,18 +98,25 @@ class RequestSerializer(serializers.Serializer):
         user_role = getattr(self.context['request'].user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Validating request: user_role={user_role}, data={data}")  # Debug
+        print(f"Validating request: user_role={user_role}, data={data}")
 
         if user_role == 'dispetcher':
-
-            allowed_fields = {'status', 'comments'}
+            allowed_fields = {'status', 'comments', 'driver'}
             if any(key not in allowed_fields for key in data):
-                raise serializers.ValidationError({"detail": "Dispatchers can only update status and comments."})
+                raise serializers.ValidationError({"detail": "Dispatchers can only update status, comments, and driver."})
 
             if data.get('status') == 3:
                 comments = data.get('comments', '').strip()
                 if not comments:
                     raise serializers.ValidationError({"comments": "Comments are required when rejecting a request."})
+
+            if 'driver' in data and data['driver']:
+                try:
+                    driver = User.objects.get(id=ObjectId(data['driver']))
+                    if driver.role != Role.DRIVER:
+                        raise serializers.ValidationError({"driver": "Assigned user must have the DRIVER role."})
+                except User.DoesNotExist:
+                    raise serializers.ValidationError({"driver": "Driver not found."})
 
         return data
 
@@ -117,6 +125,7 @@ class RequestSerializer(serializers.Serializer):
         status_choices = dict(Request.STATUS_CHOICES)
         representation['status_text'] = status_choices.get(instance.status, "Unknown")
         representation["id"] = str(instance.id)
+        representation["driver"] = str(instance.driver.id) if instance.driver else None
         route_objects = Route.objects(request=instance)
         representation['routes'] = RouteSerializer(route_objects, many=True).data
         return representation
@@ -124,7 +133,10 @@ class RequestSerializer(serializers.Serializer):
     def create(self, validated_data):
         routes_data = validated_data.pop("routes", [])
         user_id = validated_data.pop("user")
+        driver_id = validated_data.pop("driver", None)
         validated_data["user"] = User.objects.get(id=ObjectId(user_id))
+        if driver_id:
+            validated_data["driver"] = User.objects.get(id=ObjectId(driver_id))
         request = Request.objects.create(**validated_data)
 
         route_refs = []
@@ -140,6 +152,9 @@ class RequestSerializer(serializers.Serializer):
         if "user" in validated_data:
             user_id = validated_data.pop("user")
             validated_data["user"] = User.objects.get(id=ObjectId(user_id))
+        if "driver" in validated_data:
+            driver_id = validated_data.pop("driver", None)
+            validated_data["driver"] = User.objects.get(id=ObjectId(driver_id)) if driver_id else None
         validated_data.pop("routes", None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)

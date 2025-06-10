@@ -9,21 +9,20 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 def send_push_notification_to_user(user, title, body):
-    tokens = DeviceToken.objects.filter(user=user)
-    if not tokens:
-        print(f"No tokens found for user {user}")
+    device_token = DeviceToken.objects(user=user).first()
+    if not device_token:
+        print(f"No FCM token found for user {user.email}")
         return
 
-    for token in tokens:
-        try:
-            message = messaging.Message(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body,
-                ),
-                token=token.fcm_token,
-            )
-            response = messaging.send(message)
-            print(f"Notification sent to {token.fcm_token}: {response}")
-        except Exception as e:
-            print(f"Failed to send notification to {token.fcm_token}: {str(e)}")
+    message = messaging.Message(
+        notification=messaging.Notification(
+            title=title,
+            body=body,
+        ),
+        token=device_token.fcm_token,
+    )
+    try:
+        response = messaging.send(message)
+        print(f"Notification sent to {device_token.fcm_token}: {response}")
+    except Exception as e:
+        print(f"Error sending notification to {user.email}: {str(e)}")

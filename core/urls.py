@@ -34,6 +34,11 @@ urlpatterns = [
 
     path('save-fcm-token/', SaveFCMTokenView.as_view(), name='save-fcm-token'),
 
+    path('requests/<str:pk>/assign-driver/', AssignDriverToRequestView.as_view(), name='assign-driver'),
+
+
+
+
     path('trips/export/', trip_report_export, name='trip-report-export'),
     path('requests/', RequestListView.as_view(), name='request-list'),
     path('requests/create/', RequestCreateView.as_view(), name='request-create'),

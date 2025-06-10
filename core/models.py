@@ -64,11 +64,11 @@ class Request(Document):
         (3, 'Rejected'),
     )
 
-    # goal = StringField(null=True)
     date = DateField(null=True)
-    user = ReferenceField(User, reverse_delete_rule=2)  # CASCADE
+    user = ReferenceField(User, reverse_delete_rule=2)
+    driver = ReferenceField(User, null=True, reverse_delete_rule=2)
     status = IntField(choices=STATUS_CHOICES, default=0)
-    comments = StringField(null=True, default=0)
+    comments = StringField(null=True, default="")
     routes = ListField(ReferenceField('Route'))
 
     def __str__(self):

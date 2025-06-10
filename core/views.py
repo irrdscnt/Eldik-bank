@@ -20,7 +20,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from bson import ObjectId, errors as bson_errors
-
+from bson.errors import InvalidId
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -688,13 +688,15 @@ class RequestListView(GenericAPIView):
         return Response(serializer.data)
 
 
+
+
 class RequestDetail(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self, pk):
         try:
             return Request.objects.get(id=ObjectId(pk))
-        except (Request.DoesNotExist, ObjectId.InvalidId):
+        except (DoesNotExist, ObjectId.InvalidId):
             return None
 
     def send_status_notification(self, request_obj, new_status):
@@ -702,17 +704,22 @@ class RequestDetail(APIView):
         status_choices = dict(Request.STATUS_CHOICES)
         status_text = status_choices.get(new_status, "Unknown")
 
-        if new_status == 2:
-            title = "Заявка одобрена"
-            body = f"Ваша заявка от {request_obj.date} была одобрена."
-        elif new_status == 3:
-            title = "Заявка отклонена"
-            body = f"Ваша заявка от {request_obj.date} была отклонена. Причина: {request_obj.comments or 'Не указана'}."
-        else:
-            print(f"Статус {new_status} не требует уведомления")
-            return
+        user_token = DeviceToken.objects(user=request_obj.user).first()
+        driver_token = DeviceToken.objects(user=request_obj.driver).first() if request_obj.driver else None
 
-        return send_push_notification_to_user(request_obj.user, title, body)
+        if user_token and new_status in [2, 3]:
+            title = "Заявка одобрена" if new_status == 2 else "Заявка отклонена"
+            body = (f"Ваша заявка от {request_obj.date} была одобрена." if new_status == 2
+                    else f"Ваша заявка от {request_obj.date} была отклонена. Причина: {request_obj.comments or 'Не указана'}.")
+            print(f"Sending user notification to {request_obj.user.email} (role: {request_obj.user.role})")
+            send_push_notification_to_user(request_obj.user, title, body)
+
+        if driver_token and new_status == 2 and (not user_token or driver_token.fcm_token != user_token.fcm_token):
+            driver_title = f"Заявка {status_text}"
+            route_info = f"{request_obj.routes[0].departure} → {request_obj.routes[0].destination}" if request_obj.routes else "Маршрут не указан"
+            driver_body = f"Статус заявки от {request_obj.user.name or request_obj.user.email} на {request_obj.date} изменён на '{status_text}'. Маршрут: {route_info}."
+            print(f"Sending driver notification to {request_obj.driver.email} (role: {request_obj.driver.role})")
+            send_push_notification_to_user(request_obj.driver, driver_title, driver_body)
 
     @swagger_auto_schema(
         operation_description="Получить информацию о заявке по ID",
@@ -729,7 +736,7 @@ class RequestDetail(APIView):
         return Response(serializer.data)
 
     @swagger_auto_schema(
-        operation_description="Полностью обновить заявку по ID (диспетчеры могут менять только статус и комментарии, админы — все поля)",
+        operation_description="Полностью обновить заявку по ID (диспетчеры могут менять только статус, комментарии и водителя, админы — все поля)",
         request_body=RequestSerializer,
         responses={
             200: RequestSerializer,
@@ -761,7 +768,7 @@ class RequestDetail(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        operation_description="Частично обновить заявку по ID (диспетчеры могут менять только статус и комментарии, админы — все поля)",
+        operation_description="Частично обновить заявку по ID (диспетчеры могут менять только статус, комментарии и водителя, админы — все поля)",
         request_body=RequestSerializer,
         responses={
             200: RequestSerializer,
@@ -786,14 +793,11 @@ class RequestDetail(APIView):
         serializer = RequestSerializer(request_obj, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
-
             if 'status' in request.data:
-                self.send_status_notification(serializer.instance, request.data['status'])
+                self.send_status_notification(request_obj, request.data['status'])
             return Response(serializer.data)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 class RouteList(APIView):
     pagination_class = UnlimitedPagination
 
@@ -1579,17 +1583,86 @@ class ChangePasswordView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 class SaveFCMTokenView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         fcm_token = request.data.get('fcm_token')
         if not fcm_token:
-            return Response({'detail': 'FCM token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "FCM token is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        existing_token = DeviceToken.objects(user=request.user, fcm_token=fcm_token).first()
-        if existing_token:
-            return Response({'detail': 'FCM token already exists.'}, status=status.HTTP_200_OK)
+        try:
+            DeviceToken.objects(user=request.user).delete()
 
-        DeviceToken.objects.create(user=request.user, fcm_token=fcm_token)
-        return Response({'detail': 'FCM token saved.'}, status=status.HTTP_201_CREATED)
+            DeviceToken.objects.create(
+                user=request.user,
+                fcm_token=fcm_token,
+                created_at=datetime.utcnow()
+            )
+            return Response({"detail": "Token saved successfully."}, status=status.HTTP_200_OK)
+        except NotUniqueError:
+            return Response({"detail": "FCM token already exists for another user."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": f"Error saving token: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+class AssignDriverToRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Назначить водителя на заявку (только для диспетчеров).",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['driver_id'],
+            properties={
+                'driver_id': openapi.Schema(type=openapi.TYPE_STRING, description="ID водителя"),
+            }
+        ),
+        responses={
+            200: RequestSerializer,
+            400: "Неверные данные",
+            403: "Нет прав на назначение",
+            404: "Заявка или водитель не найдены"
+        }
+    )
+    def post(self, request, pk):
+        user_role = getattr(request.user, 'role', None)
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        if user_role != 'dispetcher':
+            return Response({"detail": "Only dispatchers can assign drivers."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            request_obj = Request.objects.get(id=ObjectId(pk))
+        except (DoesNotExist, InvalidId):
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        driver_id = request.data.get('driver_id')
+        if not driver_id:
+            return Response({"detail": "Driver ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            driver = User.objects.get(id=ObjectId(driver_id))
+            if driver.role != Role.DRIVER:
+                return Response({"detail": "Assigned user must have the DRIVER role."}, status=status.HTTP_400_BAD_REQUEST)
+        except (DoesNotExist, InvalidId):
+            return Response({"detail": "Driver not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        request_obj.driver = driver
+        request_obj.status = 1
+        request_obj.save()
+
+        user_title = "Ваша заявка принята в работу"
+        user_body = f"Водитель {driver.name or driver.email} назначен на вашу заявку от {request_obj.date}."
+        send_push_notification_to_user(request_obj.user, user_title, user_body)
+
+        driver_title = "Назначена новая заявка"
+        route_info = f"{request_obj.routes[0].departure} → {request_obj.routes[0].destination}" if request_obj.routes else "Маршрут не указан"
+        driver_body = f"Вам назначена заявка от {request_obj.user.name or request_obj.user.email} на {request_obj.date}. Маршрут: {route_info}."
+        send_push_notification_to_user(driver, driver_title, driver_body)
+
+        serializer = RequestSerializer(request_obj)
+        return Response(serializer.data, status=status.HTTP_200_OK)
