@@ -50,6 +50,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'drf_yasg',
     'channels',
+    'authorization',
+    'core_requests',
     'tracking.apps.TrackingConfig',
 
 ]
@@ -68,6 +70,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'car_rental_bank.urls'
 import os
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES = [
     {
@@ -189,7 +192,6 @@ STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
-
 
 CHANNEL_LAYERS = {
     "default": {

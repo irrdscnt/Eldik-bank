@@ -2,7 +2,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 import json
 from bson import ObjectId
 from datetime import datetime, timezone
-from core.models import Car_user, Location, DriverLocation, UserLocation  
+from core_requests.models import Car_user, Location, DriverLocation, UserLocation
 
 class LocationConsumer(AsyncWebsocketConsumer):
     async def connect(self):

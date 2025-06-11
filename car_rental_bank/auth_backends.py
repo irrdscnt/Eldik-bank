@@ -1,7 +1,7 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 from bson import ObjectId  # Import bson
-from core.models import User
+from core_requests.models import *
 from rest_framework_simplejwt.settings import api_settings
 
 class MongoJWTAuthentication(JWTAuthentication):
