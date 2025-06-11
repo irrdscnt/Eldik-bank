@@ -950,3 +950,74 @@ class RequestDetail(APIView):
             return Response(serializer.data)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class FastRequestListView(APIView):
+    @swagger_auto_schema(
+        operation_description="Получить быстрый список заявок с маршрутами через MongoDB aggregation",
+        manual_parameters=[
+            openapi.Parameter('limit', openapi.IN_QUERY, description="Количество на странице", type=openapi.TYPE_INTEGER),
+            openapi.Parameter('offset', openapi.IN_QUERY, description="Смещение от начала", type=openapi.TYPE_INTEGER)
+        ],
+        responses={200: openapi.Response(description="Список заявок с маршрутами")}
+    )
+    def get(self, request):
+        db = get_db()
+
+        try:
+            limit = int(request.GET.get("limit", 1000))
+            offset = int(request.GET.get("offset", 0))
+        except ValueError:
+            return Response({"error": "Invalid pagination params"}, status=400)
+
+        pipeline = [
+            {"$sort": {"date": -1}},
+            {"$skip": offset},
+            {"$limit": limit},
+            # Присоединяем маршруты
+            {
+                "$lookup": {
+                    "from": "route",
+                    "localField": "_id",
+                    "foreignField": "request",
+                    "as": "routes"
+                }
+            },
+            # Присоединяем user
+            {
+                "$lookup": {
+                    "from": "user",
+                    "localField": "user",
+                    "foreignField": "_id",
+                    "as": "user_info"
+                }
+            },
+            {"$unwind": {"path": "$user_info", "preserveNullAndEmptyArrays": True}},
+            # Присоединяем driver
+            {
+                "$lookup": {
+                    "from": "user",
+                    "localField": "driver",
+                    "foreignField": "_id",
+                    "as": "driver_info"
+                }
+            },
+            {"$unwind": {"path": "$driver_info", "preserveNullAndEmptyArrays": True}},
+        ]
+
+        data = list(db.request.aggregate(pipeline))
+
+        for item in data:
+            item["id"] = str(item.pop("_id"))
+            item["user"] = item.get("user_info", {}).get("name")
+            item["driver"] = item.get("driver_info", {}).get("name")
+            item.pop("user_info", None)
+            item.pop("driver_info", None)
+
+            item["status_text"] = dict(Request.STATUS_CHOICES).get(item["status"], "Unknown")
+
+            for route in item.get("routes", []):
+                route["id"] = str(route.pop("_id", ""))
+                if "request" in route:
+                    route["request"] = str(route["request"])
+
+        return Response(data)

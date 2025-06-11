@@ -17,6 +17,7 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path('fast-requests/', FastRequestListView.as_view(), name='fast-request-list'),
     path('save-fcm-token/', SaveFCMTokenView.as_view(), name='save-fcm-token'),
 
     path('trips/', TripCreateAPIView.as_view(), name='trip-create'),
