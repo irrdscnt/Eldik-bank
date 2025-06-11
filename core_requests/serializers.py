@@ -4,7 +4,7 @@ from bson import ObjectId
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.hashers import check_password
-
+from core_requests.models import *
 
 class TripSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
