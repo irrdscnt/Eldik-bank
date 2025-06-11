@@ -1,7 +1,7 @@
 .venv
 .idea
 .env
-eldik-a679a-firebase-adminsdk-fbsvc-5ca37c8fef.json*.pyc
+eldik-a679a-firebase-adminsdk-fbsvc-5ca37c8fef.json
 *.pyc
-.car_rental_bank/conf/
 venv/
+eldik-bank-firebase-adminsdk-fbsvc-fcd4b17132.json
