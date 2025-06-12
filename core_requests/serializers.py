@@ -93,7 +93,6 @@ class RequestSerializer(serializers.Serializer):
         user_role = getattr(self.context['request'].user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Validating request: user_role={user_role}, data={data}")
 
         if user_role == 'dispetcher':
             allowed_fields = {'status', 'comments', 'driver'}

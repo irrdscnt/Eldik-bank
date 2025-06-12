@@ -23,7 +23,6 @@ class UserSerializer(serializers.Serializer):
         user_role = getattr(self.context['request'].user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Validating role: user_role={user_role}, data={data}")
 
         if 'role' in data and user_role != 'admin':
             raise serializers.ValidationError({"role": "Only admins can change the role."})

@@ -356,7 +356,6 @@ class UserDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, target_user_id={pk}")
 
         if str(user.id) != str(request.user.id) and user_role != 'admin':
             return Response({"detail": "You do not have permission to update this user."},
@@ -386,7 +385,6 @@ class UserDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, target_user_id={pk}")
 
         if str(user.id) != str(request.user.id) and user_role != 'admin':
             return Response({"detail": "You do not have permission to update this user."},
@@ -411,7 +409,6 @@ class UserDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions for delete: user_id={request.user.id}, role={user_role}")
 
         if user_role != 'admin':
             return Response({"detail": "Only admins can delete users."}, status=status.HTTP_403_FORBIDDEN)

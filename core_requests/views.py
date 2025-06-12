@@ -825,14 +825,12 @@ class RequestDetail(APIView):
             title = "Заявка одобрена" if new_status == 2 else "Заявка отклонена"
             body = (f"Ваша заявка от {request_obj.date} была одобрена." if new_status == 2
                     else f"Ваша заявка от {request_obj.date} была отклонена. Причина: {request_obj.comments or 'Не указана'}.")
-            print(f"Sending user notification to {request_obj.user.email} (role: {request_obj.user.role})")
             send_push_notification_to_user(request_obj.user, title, body)
 
         if driver_token and new_status == 2 and (not user_token or driver_token.fcm_token != user_token.fcm_token):
             driver_title = f"Заявка {status_text}"
             route_info = f"{request_obj.routes[0].departure} → {request_obj.routes[0].destination}" if request_obj.routes else "Маршрут не указан"
             driver_body = f"Статус заявки от {request_obj.user.name or request_obj.user.email} на {request_obj.date} изменён на '{status_text}'. Маршрут: {route_info}."
-            print(f"Sending driver notification to {request_obj.driver.email} (role: {request_obj.driver.role})")
             send_push_notification_to_user(request_obj.driver, driver_title, driver_body)
 
     @swagger_auto_schema(
@@ -867,7 +865,6 @@ class RequestDetail(APIView):
         user_role = getattr(request.user, 'role', 'user')
         if hasattr(user_role, 'value'):
             user_role = user_role.value
-        print(f"Checking permissions: user_id={request.user.id}, role={user_role}, request_id={pk}")
 
         if user_role not in ['dispetcher', 'admin'] and str(request_obj.user.id) != str(request.user.id):
             return Response({"detail": "You do not have permission to update this request."},
@@ -1141,7 +1138,6 @@ class RouteTimeUpdate(APIView):
 
         user_token = DeviceToken.objects(user=request_obj.user).first()
         if user_token:
-            print(f"Sending notification to user {request_obj.user.email} (role: {request_obj.user.role})")
             send_push_notification_to_user(request_obj.user, title, body)
 
         if request_obj.driver and str(request_obj.driver.id) != str(request_obj.user.id):
@@ -1150,7 +1146,6 @@ class RouteTimeUpdate(APIView):
                 driver_title = f"Поездка {'началась' if action == 'start' else 'завершилась'}"
                 driver_body = (f"Ваша поездка по маршруту {route.departure} → {route.destination} "
                                f"{'началась' if action == 'start' else 'завершилась'} в {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
-                print(f"Sending notification to driver {request_obj.driver.email} (role: {request_obj.driver.role})")
                 send_push_notification_to_user(request_obj.driver, driver_title, driver_body)
 
     @swagger_auto_schema(
@@ -1159,9 +1154,9 @@ class RouteTimeUpdate(APIView):
             type=openapi.TYPE_OBJECT,
             properties={
                 'action': openapi.Schema(type=openapi.TYPE_STRING, enum=['start', 'end'],
-                                        description='Действие: start или end'),
+                                         description='Действие: start или end'),
                 'time': openapi.Schema(type=openapi.TYPE_STRING, format='date-time',
-                                      description='Время в формате ISO 8601'),
+                                       description='Время в формате ISO 8601'),
             },
             required=['action']
         ),
@@ -1179,12 +1174,12 @@ class RouteTimeUpdate(APIView):
 
         if request_obj.driver and str(request_obj.driver.id) != str(request.user.id):
             return Response({"detail": "You do not have permission to update this route."},
-                           status=status.HTTP_403_FORBIDDEN)
+                            status=status.HTTP_403_FORBIDDEN)
 
         action = request.data.get('action')
         if action not in ['start', 'end']:
             return Response({"detail": "Invalid action. Must be 'start' or 'end'."},
-                           status=status.HTTP_400_BAD_REQUEST)
+                            status=status.HTTP_400_BAD_REQUEST)
 
         time_str = request.data.get('time')
         try:
@@ -1199,7 +1194,7 @@ class RouteTimeUpdate(APIView):
         else:
             if not route.start_time:
                 return Response({"detail": "Cannot set end time before start time."},
-                               status=status.HTTP_400_BAD_REQUEST)
+                                status=status.HTTP_400_BAD_REQUEST)
             if route.end_time:
                 return Response({"detail": "End time already set."}, status=status.HTTP_400_BAD_REQUEST)
             route.end_time = time
