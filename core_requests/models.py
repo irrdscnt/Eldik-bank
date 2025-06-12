@@ -10,10 +10,9 @@ from bson import ObjectId
 
 class Request(Document):
     STATUS_CHOICES = (
-        (0, 'Created'),
-        (1, 'In Progress'),
-        (2, 'Completed'),
-        (3, 'Rejected'),
+        (0, 'In Progress'),
+        (1, 'Confirm'),
+        (2, 'Rejected'),
     )
 
     date = DateField(null=True)
