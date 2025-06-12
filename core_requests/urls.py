@@ -20,9 +20,9 @@ urlpatterns = [
     path('fast-requests/', FastRequestListView.as_view(), name='fast-request-list'),
     path('save-fcm-token/', SaveFCMTokenView.as_view(), name='save-fcm-token'),
 
+    path('trips/export/', trip_report_export, name='trip-report-export'),
     path('trips/', TripCreateAPIView.as_view(), name='trip-create'),
     path('trips/<str:pk>/', TripDetailAPIView.as_view(), name='trip-detail'),
-    path('trips/export/', trip_report_export, name='trip-report-export'),
     path('users/<str:user_id>/trips/', UserTripsView.as_view(), name='user-trips'),
 
     path('routes/', RouteList.as_view(), name='route-list'),

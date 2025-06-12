@@ -27,6 +27,8 @@ from mongoengine import Document, StringField, BooleanField
 from authorization.views import *
 import pandas as pd
 from django.http import HttpResponse
+from core_requests.utils import *
+from collections import defaultdict
 
 
 class SaveFCMTokenView(APIView):
@@ -54,6 +56,7 @@ class SaveFCMTokenView(APIView):
 
 
 class TripCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
     pagination_class = UnlimitedPagination
 
     @swagger_auto_schema(
@@ -104,6 +107,8 @@ class TripCreateAPIView(APIView):
 
 
 class TripDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get_object(self, pk):
         try:
             return Trip.objects.get(id=ObjectId(pk))
@@ -294,6 +299,7 @@ class UserTripsView(APIView):
 
 
 class RouteList(APIView):
+    permission_classes = [IsAuthenticated]
     pagination_class = UnlimitedPagination
 
     @swagger_auto_schema(
@@ -348,6 +354,8 @@ class RouteList(APIView):
 
 
 class CreateRouteWithRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(
         operation_summary="Создать маршрут с привязкой к заявке (с подсчётом usage_count)",
         request_body=openapi.Schema(
@@ -387,6 +395,7 @@ class CreateRouteWithRequestView(APIView):
 
 
 class FrequentRoutesView(APIView):
+    permission_classes = [IsAuthenticated]
     pagination_class = UnlimitedPagination
 
     @swagger_auto_schema(
@@ -459,6 +468,8 @@ class FrequentRoutesView(APIView):
 
 
 class RouteDetail(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get_object(self, pk):
         try:
             return Route.objects.get(pk=pk)
@@ -511,6 +522,7 @@ class RouteDetail(APIView):
 
 
 class UserFrequentRoutes(APIView):
+    permission_classes = [IsAuthenticated]
     pagination_class = UnlimitedPagination
 
     @swagger_auto_schema(
@@ -755,6 +767,7 @@ class UserRequestListView(APIView):
 
 
 class RequestListView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
     serializer_class = RequestSerializer
     queryset = Request.objects.all()
     pagination_class = UnlimitedPagination
@@ -807,6 +820,8 @@ class RequestListView(GenericAPIView):
 
 
 class RequestCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
@@ -951,29 +966,143 @@ class RequestDetail(APIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class FastRequestListView(APIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = UnlimitedPagination
+
     @swagger_auto_schema(
-        operation_description="Получить быстрый список заявок с маршрутами через MongoDB aggregation",
+        operation_description="Получить быстрый список заявок с маршрутами через MongoDB aggregation с фильтрацией по статусу и имени пользователя",
         manual_parameters=[
-            openapi.Parameter('limit', openapi.IN_QUERY, description="Количество на странице", type=openapi.TYPE_INTEGER),
-            openapi.Parameter('offset', openapi.IN_QUERY, description="Смещение от начала", type=openapi.TYPE_INTEGER)
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество записей на странице (по умолчанию: 10)",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Смещение от начала списка (по умолчанию: 0)",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'status',
+                openapi.IN_QUERY,
+                description="Фильтр по статусу заявки (0: Created, 1: In Progress, 2: Completed, 3: Rejected)",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'username',
+                openapi.IN_QUERY,
+                description="Фильтр по имени пользователя (частичное совпадение, создатель или водитель)",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
         ],
-        responses={200: openapi.Response(description="Список заявок с маршрутами")}
+        responses={
+            200: openapi.Response(
+                description="Пагинированный список заявок с маршрутами",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Общее количество заявок"),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="URL следующей страницы",
+                                               nullable=True),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING, description="URL предыдущей страницы",
+                                                   nullable=True),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING, description="ID заявки"),
+                                    'date': openapi.Schema(type=openapi.TYPE_STRING, description="Дата заявки"),
+                                    'user': openapi.Schema(type=openapi.TYPE_STRING,
+                                                           description="Имя создателя заявки"),
+                                    'driver': openapi.Schema(type=openapi.TYPE_STRING, description="Имя водителя",
+                                                             nullable=True),
+                                    'status': openapi.Schema(type=openapi.TYPE_INTEGER, description="Статус заявки"),
+                                    'status_text': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                  description="Текстовое описание статуса"),
+                                    'comments': openapi.Schema(type=openapi.TYPE_STRING, description="Комментарии",
+                                                               nullable=True),
+                                    'routes': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(
+                                            type=openapi.TYPE_OBJECT,
+                                            properties={
+                                                'id': openapi.Schema(type=openapi.TYPE_STRING),
+                                                'goal': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                                                'departure': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                                                'destination': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                                                'time': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                                                'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                            }
+                                        )
+                                    ),
+                                }
+                            )
+                        )
+                    }
+                )
+            ),
+            400: openapi.Response(description="Неверные параметры запроса"),
+        }
     )
     def get(self, request):
         db = get_db()
 
         try:
-            limit = int(request.GET.get("limit", 1000))
+            limit = int(request.GET.get("limit", self.pagination_class.default_limit))
             offset = int(request.GET.get("offset", 0))
+            status_filter = request.GET.get("status")
+            username_filter = request.GET.get("username")
         except ValueError:
-            return Response({"error": "Invalid pagination params"}, status=400)
+            return Response({"error": "Invalid pagination or filter parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
-        pipeline = [
+        pipeline = []
+
+        match_stage = {}
+        if status_filter is not None:
+            try:
+                status_filter = int(status_filter)
+                if status_filter not in [0, 1, 2, 3]:
+                    return Response({"error": "Invalid status value. Must be 0, 1, 2, or 3."},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                match_stage["status"] = status_filter
+            except ValueError:
+                return Response({"error": "Status must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if username_filter:
+            user_ids = [user.id for user in User.objects(name__icontains=username_filter)]
+            if user_ids:
+                match_stage["$or"] = [
+                    {"user": {"$in": user_ids}},
+                    {"driver": {"$in": user_ids}}
+                ]
+            else:
+                return Response({
+                    "count": 0,
+                    "next": None,
+                    "previous": None,
+                    "results": []
+                })
+
+        if match_stage:
+            pipeline.append({"$match": match_stage})
+
+        count_pipeline = pipeline + [{"$count": "total"}]
+        count_result = list(db.request.aggregate(count_pipeline))
+        total_count = count_result[0]["total"] if count_result else 0
+
+        pipeline.extend([
             {"$sort": {"date": -1}},
             {"$skip": offset},
             {"$limit": limit},
-            # Присоединяем маршруты
             {
                 "$lookup": {
                     "from": "route",
@@ -982,7 +1111,6 @@ class FastRequestListView(APIView):
                     "as": "routes"
                 }
             },
-            # Присоединяем user
             {
                 "$lookup": {
                     "from": "user",
@@ -992,7 +1120,6 @@ class FastRequestListView(APIView):
                 }
             },
             {"$unwind": {"path": "$user_info", "preserveNullAndEmptyArrays": True}},
-            # Присоединяем driver
             {
                 "$lookup": {
                     "from": "user",
@@ -1002,22 +1129,48 @@ class FastRequestListView(APIView):
                 }
             },
             {"$unwind": {"path": "$driver_info", "preserveNullAndEmptyArrays": True}},
-        ]
+        ])
 
         data = list(db.request.aggregate(pipeline))
 
+        results = []
         for item in data:
-            item["id"] = str(item.pop("_id"))
-            item["user"] = item.get("user_info", {}).get("name")
-            item["driver"] = item.get("driver_info", {}).get("name")
-            item.pop("user_info", None)
-            item.pop("driver_info", None)
-
-            item["status_text"] = dict(Request.STATUS_CHOICES).get(item["status"], "Unknown")
+            formatted_item = {
+                "id": str(item.pop("_id")),
+                "date": item.get("date").strftime("%Y-%m-%d") if item.get("date") else None,
+                "user": item.get("user_info", {}).get("name", "Unknown"),
+                "driver": item.get("driver_info", {}).get("name", None),
+                "status": item.get("status", 0),
+                "status_text": dict(Request.STATUS_CHOICES).get(item.get("status", 0), "Unknown"),
+                "comments": item.get("comments", ""),
+                "routes": []
+            }
 
             for route in item.get("routes", []):
-                route["id"] = str(route.pop("_id", ""))
-                if "request" in route:
-                    route["request"] = str(route["request"])
+                formatted_route = {
+                    "id": str(route.pop("_id", "")),
+                    "goal": route.get("goal"),
+                    "departure": route.get("departure"),
+                    "destination": route.get("destination"),
+                    "time": route.get("time"),
+                    "usage_count": route.get("usage_count", 0),
+                    "request": str(route["request"]) if route.get("request") else None
+                }
+                formatted_item["routes"].append(formatted_route)
 
-        return Response(data)
+            results.append(formatted_item)
+
+        paginator = self.pagination_class()
+        paginator.count = total_count
+        paginator.limit = limit
+        paginator.offset = offset
+        paginator.request = request
+
+        response_data = {
+            "count": total_count,
+            "next": paginator.get_next_link(),
+            "previous": paginator.get_previous_link(),
+            "results": results
+        }
+
+        return Response(response_data)

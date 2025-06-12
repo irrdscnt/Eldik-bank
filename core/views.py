@@ -20,36 +20,29 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from bson import ObjectId, errors as bson_errors
-from bson.errors import InvalidId
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from bson import ObjectId
 from authorization.models import User
 from authorization.serializers import UserSerializer
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
 from core_requests.utils import send_push_notification_to_user
 from rest_framework.pagination import LimitOffsetPagination
 from django.shortcuts import render
 from authorization.views import *
 from core.serializers import *
+from mongoengine import Document, StringField, BooleanField
+from collections import Counter, defaultdict
+from datetime import datetime
+import csv
+from collections import defaultdict
+from django.http import HttpResponse
 
 
 def test_location_view(request):
     return render(request, 'test-location.html')
 
 
-from mongoengine import Document, StringField, BooleanField
-
-from collections import Counter, defaultdict
-
-from rest_framework.permissions import IsAuthenticated
-from datetime import datetime
-
-
 class ReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         start_date = request.query_params.get("start")
         end_date = request.query_params.get("end")
@@ -75,14 +68,6 @@ class ReportView(APIView):
             "routes_count": routes.count(),
             "driver_load": driver_trip_counts,
         })
-
-
-import csv
-from collections import defaultdict
-from datetime import datetime
-from django.http import HttpResponse
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
 
 
 class ReportCSVDownloadView(APIView):
@@ -132,6 +117,7 @@ class ReportCSVDownloadView(APIView):
 
 class CarListCreateAPIView(APIView):
     pagination_class = UnlimitedPagination
+    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         operation_description="Получить список автомобилей с пагинацией.",
@@ -181,6 +167,8 @@ class CarListCreateAPIView(APIView):
 
 
 class CarDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     @swagger_auto_schema(
         responses={200: CarSerializer()}
     )
@@ -212,6 +200,7 @@ class CarDetailAPIView(APIView):
 
 
 class CarUserListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
     pagination_class = UnlimitedPagination
 
     @swagger_auto_schema(
@@ -262,6 +251,8 @@ class CarUserListCreateAPIView(APIView):
 
 
 class CarUserDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get_object(self, pk):
         try:
             return Car_user.objects.get(id=pk)

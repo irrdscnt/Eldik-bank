@@ -2,10 +2,11 @@ from mongoengine import Document, StringField, EmailField, IntField, EnumField, 
 from enum import Enum
 from mongoengine import ReferenceField
 from datetime import datetime, timezone
-from mongoengine import Document, ReferenceField, StringField, DateTimeField, CASCADE,DateField
+from mongoengine import Document, ReferenceField, StringField, DateTimeField, CASCADE, DateField
 from authorization.models import *
 from core.models import *
-from authorization.models import User
+from bson import ObjectId
+
 
 class Request(Document):
     STATUS_CHOICES = (
