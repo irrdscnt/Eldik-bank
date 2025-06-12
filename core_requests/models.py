@@ -49,6 +49,8 @@ class Route(Document):
     usage_count = IntField(default=0)
     start_time = DateTimeField(null=True)
     end_time = DateTimeField(null=True)
+    travel_date = DateTimeField(null=True)
+    transport_type = StringField(choices=['passenger', 'cargo', 'light'], null=True)
 
     def __str__(self):
         return f"Route from {self.departure} to {self.destination}"
