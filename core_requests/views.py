@@ -1135,13 +1135,23 @@ class RouteTimeUpdate(APIView):
             return None, None
 
     def send_time_notification(self, request_obj, route, action):
+        title = f"Поездка {'началась' if action == 'start' else 'завершилась'}"
+        body = (f"Поездка по маршруту {route.departure} → {route.destination} "
+                f"{'началась' if action == 'start' else 'завершилась'} в {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+
         user_token = DeviceToken.objects(user=request_obj.user).first()
         if user_token:
-            title = f"Поездка {'началась' if action == 'start' else 'завершилась'}"
-            body = (f"Поездка по маршруту {route.departure} → {route.destination} "
-                    f"{'началась' if action == 'start' else 'завершилась'} в {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
-            print(f"Sending notification to {request_obj.user.email} (role: {request_obj.user.role})")
+            print(f"Sending notification to user {request_obj.user.email} (role: {request_obj.user.role})")
             send_push_notification_to_user(request_obj.user, title, body)
+
+        if request_obj.driver and str(request_obj.driver.id) != str(request_obj.user.id):
+            driver_token = DeviceToken.objects(user=request_obj.driver).first()
+            if driver_token:
+                driver_title = f"Поездка {'началась' if action == 'start' else 'завершилась'}"
+                driver_body = (f"Ваша поездка по маршруту {route.departure} → {route.destination} "
+                               f"{'началась' if action == 'start' else 'завершилась'} в {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+                print(f"Sending notification to driver {request_obj.driver.email} (role: {request_obj.driver.role})")
+                send_push_notification_to_user(request_obj.driver, driver_title, driver_body)
 
     @swagger_auto_schema(
         operation_description="Записать время начала или окончания для маршрута в заявке",
@@ -1149,9 +1159,9 @@ class RouteTimeUpdate(APIView):
             type=openapi.TYPE_OBJECT,
             properties={
                 'action': openapi.Schema(type=openapi.TYPE_STRING, enum=['start', 'end'],
-                                         description='Действие: start или end'),
+                                        description='Действие: start или end'),
                 'time': openapi.Schema(type=openapi.TYPE_STRING, format='date-time',
-                                       description='Время в формате ISO 8601'),
+                                      description='Время в формате ISO 8601'),
             },
             required=['action']
         ),
@@ -1169,12 +1179,12 @@ class RouteTimeUpdate(APIView):
 
         if request_obj.driver and str(request_obj.driver.id) != str(request.user.id):
             return Response({"detail": "You do not have permission to update this route."},
-                            status=status.HTTP_403_FORBIDDEN)
+                           status=status.HTTP_403_FORBIDDEN)
 
         action = request.data.get('action')
         if action not in ['start', 'end']:
             return Response({"detail": "Invalid action. Must be 'start' or 'end'."},
-                            status=status.HTTP_400_BAD_REQUEST)
+                           status=status.HTTP_400_BAD_REQUEST)
 
         time_str = request.data.get('time')
         try:
@@ -1189,7 +1199,7 @@ class RouteTimeUpdate(APIView):
         else:
             if not route.start_time:
                 return Response({"detail": "Cannot set end time before start time."},
-                                status=status.HTTP_400_BAD_REQUEST)
+                               status=status.HTTP_400_BAD_REQUEST)
             if route.end_time:
                 return Response({"detail": "End time already set."}, status=status.HTTP_400_BAD_REQUEST)
             route.end_time = time
