@@ -766,59 +766,6 @@ class UserRequestListView(APIView):
         return paginator.get_paginated_response(serializer.data)
 
 
-class RequestListView(GenericAPIView):
-    permission_classes = [IsAuthenticated]
-    serializer_class = RequestSerializer
-    queryset = Request.objects.all()
-    pagination_class = UnlimitedPagination
-
-    @swagger_auto_schema(
-        operation_description="Получить список всех заявок с пагинацией",
-        manual_parameters=[
-            openapi.Parameter(
-                'limit',
-                openapi.IN_QUERY,
-                description="Количество элементов на странице (без ограничений)",
-                type=openapi.TYPE_INTEGER
-            ),
-            openapi.Parameter(
-                'offset',
-                openapi.IN_QUERY,
-                description="Смещение от начала списка",
-                type=openapi.TYPE_INTEGER
-            ),
-        ],
-        responses={
-            200: openapi.Response(
-                description="Пагинированный список заявок",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Общее количество заявок"),
-                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на следующую страницу"),
-                        'previous': openapi.Schema(type=openapi.TYPE_STRING,
-                                                   description="Ссылка на предыдущую страницу"),
-                        'results': openapi.Schema(
-                            type=openapi.TYPE_ARRAY,
-                            items=openapi.Schema(type=openapi.TYPE_OBJECT, description="Данные заявки")
-                        )
-                    }
-                )
-            )
-        }
-    )
-    def get(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-
 class RequestCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
