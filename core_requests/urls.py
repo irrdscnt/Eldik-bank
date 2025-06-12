@@ -35,4 +35,5 @@ urlpatterns = [
     path('requests/user/<user_id>/', UserRequestListView.as_view(), name='user-request-list'),
     path('requests/create/', RequestCreateView.as_view(), name='request-create'),
     path('requests/<str:pk>/', RequestDetail.as_view(), name='request-detail'),
+    path('requests/<str:request_id>/routes/<str:route_id>/time', RouteTimeUpdate.as_view(), name='route-time-update'),
 ]

@@ -54,10 +54,14 @@ class RouteSerializer(serializers.Serializer):
     # waiting_time = serializers.IntegerField(required=False, allow_null=True)
     usage_count = serializers.IntegerField(read_only=True)
     request = serializers.CharField(required=False, allow_null=True)
+    start_time = serializers.DateTimeField(required=False, allow_null=True)
+    end_time = serializers.DateTimeField(required=False, allow_null=True)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['request'] = str(instance.request.id) if instance.request else None
+        data['start_time'] = instance.start_time.isoformat() if instance.start_time else None
+        data['end_time'] = instance.end_time.isoformat() if instance.end_time else None
         return data
 
     def create(self, validated_data):

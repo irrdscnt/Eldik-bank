@@ -47,6 +47,8 @@ class Route(Document):
     request = ReferenceField(Request, reverse_delete_rule=2)
     time = StringField(max_length=100, null=True)
     usage_count = IntField(default=0)
+    start_time = DateTimeField(null=True)
+    end_time = DateTimeField(null=True)
 
     def __str__(self):
         return f"Route from {self.departure} to {self.destination}"

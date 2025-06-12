@@ -1121,3 +1121,80 @@ class FastRequestListView(APIView):
         }
 
         return Response(response_data)
+
+
+class RouteTimeUpdate(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_route(self, request_id, route_id):
+        try:
+            request_obj = Request.objects.get(id=ObjectId(request_id))
+            route = Route.objects.get(id=ObjectId(route_id), request=request_obj)
+            return route, request_obj
+        except (DoesNotExist, ObjectId.InvalidId):
+            return None, None
+
+    def send_time_notification(self, request_obj, route, action):
+        user_token = DeviceToken.objects(user=request_obj.user).first()
+        if user_token:
+            title = f"Поездка {'началась' if action == 'start' else 'завершилась'}"
+            body = (f"Поездка по маршруту {route.departure} → {route.destination} "
+                    f"{'началась' if action == 'start' else 'завершилась'} в {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+            print(f"Sending notification to {request_obj.user.email} (role: {request_obj.user.role})")
+            send_push_notification_to_user(request_obj.user, title, body)
+
+    @swagger_auto_schema(
+        operation_description="Записать время начала или окончания для маршрута в заявке",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'action': openapi.Schema(type=openapi.TYPE_STRING, enum=['start', 'end'],
+                                         description='Действие: start или end'),
+                'time': openapi.Schema(type=openapi.TYPE_STRING, format='date-time',
+                                       description='Время в формате ISO 8601'),
+            },
+            required=['action']
+        ),
+        responses={
+            200: RouteSerializer,
+            400: "Неверные данные",
+            403: "Нет прав на изменение",
+            404: "Маршрут или заявка не найдены"
+        }
+    )
+    def post(self, request, request_id, route_id):
+        route, request_obj = self.get_route(request_id, route_id)
+        if not route or not request_obj:
+            return Response({"detail": "Route or Request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if request_obj.driver and str(request_obj.driver.id) != str(request.user.id):
+            return Response({"detail": "You do not have permission to update this route."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        action = request.data.get('action')
+        if action not in ['start', 'end']:
+            return Response({"detail": "Invalid action. Must be 'start' or 'end'."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        time_str = request.data.get('time')
+        try:
+            time = datetime.fromisoformat(time_str) if time_str else datetime.now()
+        except (ValueError, TypeError):
+            time = datetime.now()
+
+        if action == 'start':
+            if route.start_time:
+                return Response({"detail": "Start time already set."}, status=status.HTTP_400_BAD_REQUEST)
+            route.start_time = time
+        else:
+            if not route.start_time:
+                return Response({"detail": "Cannot set end time before start time."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if route.end_time:
+                return Response({"detail": "End time already set."}, status=status.HTTP_400_BAD_REQUEST)
+            route.end_time = time
+
+        route.save()
+        self.send_time_notification(request_obj, route, action)
+        serializer = RouteSerializer(route)
+        return Response(serializer.data, status=status.HTTP_200_OK)
