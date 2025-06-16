@@ -64,3 +64,31 @@ class Trip(Document):
     route = ReferenceField('Route', reverse_delete_rule=CASCADE)
     car_user = ReferenceField(Car_user, reverse_delete_rule=CASCADE)
     end_time = DateTimeField(null=True)
+
+
+class OdometerReading(Document):
+    request = ReferenceField(Request, reverse_delete_rule=2)
+    route = ReferenceField(Route, reverse_delete_rule=2)
+    driver = ReferenceField(User, reverse_delete_rule=2)
+    start_odometer = FloatField(null=True)
+    end_odometer = FloatField(null=True)
+    no_goal_mileage = FloatField(null=True)
+    created_at = DateTimeField(default=datetime.now)
+
+    def __str__(self):
+        return f"Odometer for Route {self.route} in Request {self.request}"
+
+    @classmethod
+    def calculate_no_goal_mileage(cls, request):
+        if len(request.routes) < 2:
+            return
+
+        readings = cls.objects(request=request).order_by('created_at')
+        for i in range(len(readings) - 1):
+            current_reading = readings[i]
+            next_reading = readings[i + 1]
+
+            if current_reading.end_odometer and next_reading.start_odometer:
+                no_goal_mileage = abs(current_reading.end_odometer - next_reading.start_odometer)
+                current_reading.no_goal_mileage = no_goal_mileage
+                current_reading.save()

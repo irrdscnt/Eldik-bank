@@ -1318,7 +1318,7 @@ class RouteTimeUpdate(APIView):
     def get_route(self, request_id, route_id):
         try:
             request_obj = Request.objects.get(id=ObjectId(request_id))
-            route = Route.objects.get(id=ObjectId(route_id), request=request_obj)
+            route = Route.objects.get(id=ObjectId(route_id))
             return route, request_obj
         except (DoesNotExist, ObjectId.InvalidId):
             return None, None
@@ -1341,7 +1341,7 @@ class RouteTimeUpdate(APIView):
                 send_push_notification_to_user(request_obj.driver, driver_title, driver_body)
 
     @swagger_auto_schema(
-        operation_description="Записать время начала или окончания для маршрута в заявке",
+        operation_description="Записать время и показания одометра для маршрута в заявке",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
@@ -1349,8 +1349,10 @@ class RouteTimeUpdate(APIView):
                                          description='Действие: start или end'),
                 'time': openapi.Schema(type=openapi.TYPE_STRING, format='date-time',
                                        description='Время в формате ISO 8601'),
+                'odometer': openapi.Schema(type=openapi.TYPE_NUMBER,
+                                           description='Показания одометра в километрах'),
             },
-            required=['action']
+            required=['action', 'odometer']
         ),
         responses={
             200: RouteSerializer,
@@ -1379,19 +1381,55 @@ class RouteTimeUpdate(APIView):
         except (ValueError, TypeError):
             time = datetime.now()
 
+        odometer = request.data.get('odometer')
+        try:
+            odometer = float(odometer)
+            if odometer < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return Response({"detail": "Invalid odometer reading. Must be a non-negative number."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        odometer_reading = OdometerReading.objects(
+            request=request_obj,
+            route=route,
+            driver=request_obj.driver
+        ).first()
+
+        if not odometer_reading:
+            odometer_reading = OdometerReading(
+                request=request_obj,
+                route=route,
+                driver=request_obj.driver,
+                created_at=datetime.now()
+            )
+
         if action == 'start':
             if route.start_time:
                 return Response({"detail": "Start time already set."}, status=status.HTTP_400_BAD_REQUEST)
+            if odometer_reading.start_odometer is not None:
+                return Response({"detail": "Start odometer already set."}, status=status.HTTP_400_BAD_REQUEST)
             route.start_time = time
+            odometer_reading.start_odometer = odometer
         else:
             if not route.start_time:
                 return Response({"detail": "Cannot set end time before start time."},
                                 status=status.HTTP_400_BAD_REQUEST)
             if route.end_time:
                 return Response({"detail": "End time already set."}, status=status.HTTP_400_BAD_REQUEST)
+            if odometer_reading.end_odometer is not None:
+                return Response({"detail": "End odometer already set."}, status=status.HTTP_400_BAD_REQUEST)
+            if odometer_reading.start_odometer is not None and odometer < odometer_reading.start_odometer:
+                return Response({"detail": "End odometer cannot be less than start odometer."},
+                                status=status.HTTP_400_BAD_REQUEST)
             route.end_time = time
+            odometer_reading.end_odometer = odometer
 
         route.save()
+        odometer_reading.save()
+
+        OdometerReading.calculate_no_goal_mileage(request_obj)
+
         self.send_time_notification(request_obj, route, action)
         serializer = RouteSerializer(route)
         return Response(serializer.data, status=status.HTTP_200_OK)
