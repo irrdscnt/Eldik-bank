@@ -938,46 +938,101 @@ class RequestCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
+        operation_description="Create one or multiple requests with associated routes",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            properties={
-                'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
-                'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
-                'routes': openapi.Schema(
+            oneOf=[
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
+                        'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
+                        'routes': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
+                                    'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
+                                    'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
+                                    'departure_coordinates': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        example=["42.8746", "74.5698"],
+                                        description="List of [latitude, longitude] for departure"
+                                    ),
+                                    'destination_coordinates': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        example=["42.8167", "74.6167"],
+                                        description="List of [latitude, longitude] for destination"
+                                    ),
+                                    'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
+                                }
+                            )
+                        ),
+                    },
+                    required=['user']
+                ),
+                openapi.Schema(
                     type=openapi.TYPE_ARRAY,
                     items=openapi.Schema(
                         type=openapi.TYPE_OBJECT,
                         properties={
-                            'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
-                            'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
-                            'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
-                            'departure_coordinates': openapi.Schema(
+                            'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
+                            'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
+                            'routes': openapi.Schema(
                                 type=openapi.TYPE_ARRAY,
-                                items=openapi.Schema(type=openapi.TYPE_STRING),
-                                example=["42.8746", "74.5698"],
-                                description="List of [latitude, longitude] for departure"
+                                items=openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'goal': openapi.Schema(type=openapi.TYPE_STRING,
+                                                               example="В командировку в Бишкек"),
+                                        'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
+                                        'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
+                                        'departure_coordinates': openapi.Schema(
+                                            type=openapi.TYPE_ARRAY,
+                                            items=openapi.Schema(type=openapi.TYPE_STRING),
+                                            example=["42.8746", "74.5698"],
+                                            description="List of [latitude, longitude] for departure"
+                                        ),
+                                        'destination_coordinates': openapi.Schema(
+                                            type=openapi.TYPE_ARRAY,
+                                            items=openapi.Schema(type=openapi.TYPE_STRING),
+                                            example=["42.8167", "74.6167"],
+                                            description="List of [latitude, longitude] for destination"
+                                        ),
+                                        'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
+                                    }
+                                )
                             ),
-                            'destination_coordinates': openapi.Schema(
-                                type=openapi.TYPE_ARRAY,
-                                items=openapi.Schema(type=openapi.TYPE_STRING),
-                                example=["42.8167", "74.6167"],
-                                description="List of [latitude, longitude] for destination"
-                            ),
-                            'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
-                        }
+                        },
+                        required=['user']
                     )
                 ),
-            },
-            required=['user']
+            ]
         ),
-        responses={201: RequestCreateSerializer}
+        responses={
+            201: RequestCreateSerializer(many=True),
+            400: "Invalid data"
+        }
     )
     def post(self, request):
-        serializer = RequestCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            instance = serializer.save()
-            return Response(RequestCreateSerializer(instance).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = request.data
+        is_list = isinstance(data, list)
+
+        if is_list:
+            serializer = RequestCreateSerializer(data=data, many=True)
+            if serializer.is_valid():
+                instances = serializer.save()
+                return Response(RequestCreateSerializer(instances, many=True).data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            serializer = RequestCreateSerializer(data=data)
+            if serializer.is_valid():
+                instance = serializer.save()
+                return Response(RequestCreateSerializer(instance).data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RequestDetail(APIView):
