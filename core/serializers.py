@@ -63,10 +63,15 @@ class CarUserSerializer(serializers.Serializer):
     def update(self, instance, validated_data):
         if 'car' in validated_data:
             car = Car.objects.get(id=ObjectId(validated_data['car']))
-            # Ключевая проверка!
+
+            # Найти другого пользователя, которому уже назначена эта машина
             existing = Car_user.objects(car=car, id__ne=instance.id).first()
             if existing:
-                raise serializers.ValidationError("This car is already assigned to another user.")
+                # Обнуляем машину у другого пользователя
+                existing.car = None
+                existing.save()
+
+            # Назначаем машину текущему пользователю
             instance.car = car
 
         if 'user' in validated_data:
