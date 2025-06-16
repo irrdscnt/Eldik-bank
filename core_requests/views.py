@@ -324,14 +324,46 @@ class RouteList(APIView):
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
-                        'count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'next': openapi.Schema(type=openapi.TYPE_STRING),
-                        'previous': openapi.Schema(type=openapi.TYPE_STRING),
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Общее количество маршрутов"),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на следующую страницу",
+                                               nullable=True),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING,
+                                                   description="Ссылка на предыдущую страницу", nullable=True),
                         'results': openapi.Schema(
                             type=openapi.TYPE_ARRAY,
-                            items=openapi.Items(
+                            items=openapi.Schema(
                                 type=openapi.TYPE_OBJECT,
-
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING, description="ID маршрута"),
+                                    'goal': openapi.Schema(type=openapi.TYPE_STRING, description="Цель маршрута",
+                                                           nullable=True),
+                                    'departure': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                description="Место отправления", nullable=True),
+                                    'destination': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                  description="Место назначения", nullable=True),
+                                    'departure_coordinates': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        description="Координаты отправления [latitude, longitude]"
+                                    ),
+                                    'destination_coordinates': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        description="Координаты назначения [latitude, longitude]"
+                                    ),
+                                    'time': openapi.Schema(type=openapi.TYPE_STRING, description="Время",
+                                                           nullable=True),
+                                    'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER,
+                                                                  description="Количество использований"),
+                                    'start_time': openapi.Schema(type=openapi.TYPE_STRING, description="Время начала",
+                                                                 nullable=True),
+                                    'end_time': openapi.Schema(type=openapi.TYPE_STRING, description="Время окончания",
+                                                               nullable=True),
+                                    'travel_date': openapi.Schema(type=openapi.TYPE_STRING, description="Дата поездки",
+                                                                  nullable=True),
+                                    'transport_type': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                     description="Тип транспорта", nullable=True),
+                                }
                             )
                         )
                     }
@@ -341,33 +373,38 @@ class RouteList(APIView):
     )
     def get(self, request):
         routes = Route.objects.all()
-
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(routes, request)
-
-        if page is not None:
-            serializer = RouteSerializer(page, many=True)
-            return paginator.get_paginated_response(serializer.data)
-
-        serializer = RouteSerializer(routes, many=True)
-        return Response(serializer.data)
+        serializer = RouteSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 
 class CreateRouteWithRequestView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="Создать маршрут с привязкой к заявке (с подсчётом usage_count)",
+        operation_summary="Создать маршрут и привязать к существующей заявке",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['goal', ' departure', 'destination', 'request'],
+            required=['goal', 'departure', 'destination'],
             properties={
                 'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
                 'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
                 'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
-
+                'departure_coordinates': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_STRING),
+                    example=["42.8746", "74.5698"],
+                    description="List of [latitude, longitude] for departure"
+                ),
+                'destination_coordinates': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_STRING),
+                    example=["42.8167", "74.6167"],
+                    description="List of [latitude, longitude] for destination"
+                ),
                 'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
-                'request': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f")
+                'request_id': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f")
             }
         ),
         responses={201: RouteSerializer}
@@ -376,20 +413,27 @@ class CreateRouteWithRequestView(APIView):
         data = request.data
         departure = data.get("departure")
         destination = data.get("destination")
+        request_id = data.get("request_id")
 
-        existing_routes = Route.objects(departure=departure, destination=destination)
+        existing_route = Route.objects(departure=departure, destination=destination).order_by("-usage_count").first()
+        if existing_route:
+            data["usage_count"] = existing_route.usage_count + 1
+            route = existing_route
+            serializer = RouteSerializer(route, data=data, partial=True)
+        else:
+            data["usage_count"] = 1
+            serializer = RouteSerializer(data=data)
 
-        usage_count = existing_routes.count() + 1
-
-        request_id = data.get("request")
-        if request_id:
-            data["request"] = str(request_id)
-
-        serializer = RouteSerializer(data=data)
         if serializer.is_valid():
             route = serializer.save()
-            route.usage_count = usage_count
-            route.save()
+            if request_id:
+                try:
+                    request_obj = Request.objects.get(id=ObjectId(request_id))
+                    if route not in request_obj.routes:
+                        request_obj.routes.append(route)
+                        request_obj.save()
+                except Request.DoesNotExist:
+                    return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
             return Response(RouteSerializer(route).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -430,41 +474,64 @@ class FrequentRoutesView(APIView):
                     type=openapi.TYPE_OBJECT,
                     properties={
                         'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Общее количество маршрутов"),
-                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на следующую страницу"),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на следующую страницу",
+                                               nullable=True),
                         'previous': openapi.Schema(type=openapi.TYPE_STRING,
-                                                   description="Ссылка на предыдущую страницу"),
+                                                   description="Ссылка на предыдущую страницу", nullable=True),
                         'results': openapi.Schema(
                             type=openapi.TYPE_ARRAY,
                             items=openapi.Schema(
                                 type=openapi.TYPE_OBJECT,
                                 properties={
-                                    'id': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'name': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING, description="ID маршрута"),
+                                    'goal': openapi.Schema(type=openapi.TYPE_STRING, description="Цель маршрута",
+                                                           nullable=True),
+                                    'departure': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                description="Место отправления", nullable=True),
+                                    'destination': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                  description="Место назначения", nullable=True),
+                                    'departure_coordinates': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        description="Координаты отправления [latitude, longitude]"
+                                    ),
+                                    'destination_coordinates': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        description="Координаты назначения [latitude, longitude]"
+                                    ),
+                                    'time': openapi.Schema(type=openapi.TYPE_STRING, description="Время",
+                                                           nullable=True),
+                                    'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER,
+                                                                  description="Количество использований"),
+                                    'start_time': openapi.Schema(type=openapi.TYPE_STRING, description="Время начала",
+                                                                 nullable=True),
+                                    'end_time': openapi.Schema(type=openapi.TYPE_STRING, description="Время окончания",
+                                                               nullable=True),
+                                    'travel_date': openapi.Schema(type=openapi.TYPE_STRING, description="Дата поездки",
+                                                                  nullable=True),
+                                    'transport_type': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                     description="Тип транспорта", nullable=True),
                                 }
                             )
                         )
                     }
                 )
             ),
-            400: "Неверные параметры запроса"
+            400: openapi.Response(description="Неверные параметры запроса")
         }
     )
     def get(self, request):
-        min_usage = int(request.query_params.get('min_usage', 5))
+        try:
+            min_usage = int(request.query_params.get('min_usage', 5))
+        except ValueError:
+            return Response({"detail": "Invalid min_usage parameter."}, status=status.HTTP_400_BAD_REQUEST)
 
         routes = Route.objects(usage_count__gt=min_usage).order_by('-usage_count')
-
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(routes, request)
-
-        if page is not None:
-            serializer = RouteSerializer(page, many=True)
-            return paginator.get_paginated_response(serializer.data)
-
-        serializer = RouteSerializer(routes, many=True)
-        return Response(serializer.data)
+        serializer = RouteSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 
 class RouteDetail(APIView):
@@ -476,6 +543,13 @@ class RouteDetail(APIView):
         except Route.DoesNotExist:
             return None
 
+    @swagger_auto_schema(
+        operation_description="Получить информацию о маршруте по ID",
+        responses={
+            200: RouteSerializer,
+            404: openapi.Response(description="Маршрут не найден")
+        }
+    )
     def get(self, request, pk):
         route = self.get_object(pk)
         if route is None:
@@ -483,6 +557,15 @@ class RouteDetail(APIView):
         serializer = RouteSerializer(route)
         return Response(serializer.data)
 
+    @swagger_auto_schema(
+        operation_description="Полностью обновить маршрут по ID",
+        request_body=RouteSerializer,
+        responses={
+            200: RouteSerializer,
+            400: openapi.Response(description="Неверные данные"),
+            404: openapi.Response(description="Маршрут не найден")
+        }
+    )
     def put(self, request, pk):
         route = self.get_object(pk)
         if route is None:
@@ -493,6 +576,15 @@ class RouteDetail(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @swagger_auto_schema(
+        operation_description="Частично обновить маршрут по ID",
+        request_body=RouteSerializer,
+        responses={
+            200: RouteSerializer,
+            400: openapi.Response(description="Неверные данные"),
+            404: openapi.Response(description="Маршрут не найден")
+        }
+    )
     def patch(self, request, pk):
         route = self.get_object(pk)
         if route is None:
@@ -503,19 +595,22 @@ class RouteDetail(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @swagger_auto_schema(
+        operation_description="Удалить маршрут по ID",
+        responses={
+            204: openapi.Response(description="Маршрут успешно удален"),
+            404: openapi.Response(description="Маршрут не найден")
+        }
+    )
     def delete(self, request, pk):
         route = self.get_object(pk)
         if route is None:
             return Response({"detail": "Route not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if route.request:
-            try:
-                req = route.request
-                if route in req.routes:
-                    req.routes.remove(route)
-                    req.save()
-            except Exception as e:
-                pass
+        requests = Request.objects(routes=route)
+        for req in requests:
+            req.routes.remove(route)
+            req.save()
 
         route.delete()
         return Response({"detail": "Route deleted."}, status=status.HTTP_204_NO_CONTENT)
@@ -556,28 +651,44 @@ class UserFrequentRoutes(APIView):
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
-                        'count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'next': openapi.Schema(type=openapi.TYPE_STRING),
-                        'previous': openapi.Schema(type=openapi.TYPE_STRING),
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Общее количество маршрутов"),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, description="Ссылка на следующую страницу",
+                                               nullable=True),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING,
+                                                   description="Ссылка на предыдущую страницу", nullable=True),
                         'results': openapi.Schema(
                             type=openapi.TYPE_ARRAY,
                             items=openapi.Schema(
                                 type=openapi.TYPE_OBJECT,
                                 properties={
-                                    'id': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'departure': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'destination': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                    'is_frequent': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING, description="ID маршрута"),
+                                    'departure': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                description="Место отправления", nullable=True),
+                                    'destination': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                  description="Место назначения", nullable=True),
+                                    'departure_coordinates': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        description="Координаты отправления [latitude, longitude]"
+                                    ),
+                                    'destination_coordinates': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        description="Координаты назначения [latitude, longitude]"
+                                    ),
+                                    'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER,
+                                                                  description="Количество использований"),
+                                    'is_frequent': openapi.Schema(type=openapi.TYPE_BOOLEAN,
+                                                                  description="Частый маршрут")
                                 }
                             )
                         )
                     }
                 )
             ),
-            400: "Неверный формат ID пользователя",
-            404: "Пользователь не найден",
-            500: "Внутренняя ошибка сервера"
+            400: openapi.Response(description="Неверный формат ID пользователя"),
+            404: openapi.Response(description="Пользователь не найден"),
+            500: openapi.Response(description="Внутренняя ошибка сервера")
         }
     )
     def get(self, request, user_id):
@@ -585,9 +696,7 @@ class UserFrequentRoutes(APIView):
             return Response({"detail": "Invalid user ID format."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-
             min_count = int(request.query_params.get('min_count', 1))
-
             user = User.objects.get(id=ObjectId(user_id))
             requests = Request.objects(user=user)
 
@@ -609,6 +718,7 @@ class UserFrequentRoutes(APIView):
                 route = route_groups[key][0]
                 route.usage_count = count
                 route.is_frequent = True
+                route.save()
                 sorted_routes.append(route)
 
             paginator = self.pagination_class()
@@ -694,7 +804,7 @@ class UserRequestListView(APIView):
         try:
             user = User.objects.get(id=ObjectId(user_id))
             return Request.objects(Q(user=user) | Q(driver=user)).order_by('-date')
-        except (DoesNotExist, ObjectId.InvalidId):
+        except (ObjectDoesNotExist, ObjectId.InvalidId):
             return Request.objects.none()
 
     @swagger_auto_schema(
@@ -733,7 +843,65 @@ class UserRequestListView(APIView):
                                                    description="Ссылка на предыдущую страницу", nullable=True),
                         'results': openapi.Schema(
                             type=openapi.TYPE_ARRAY,
-                            items=openapi.Schema(type=openapi.TYPE_OBJECT, description="Данные заявки")
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING, description="ID заявки"),
+                                    'date': openapi.Schema(type=openapi.TYPE_STRING, description="Дата заявки",
+                                                           nullable=True),
+                                    'user': openapi.Schema(type=openapi.TYPE_STRING, description="ID пользователя"),
+                                    'driver': openapi.Schema(type=openapi.TYPE_STRING, description="ID водителя",
+                                                             nullable=True),
+                                    'status': openapi.Schema(type=openapi.TYPE_INTEGER, description="Статус заявки"),
+                                    'status_text': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                  description="Текстовое описание статуса"),
+                                    'comments': openapi.Schema(type=openapi.TYPE_STRING, description="Комментарии",
+                                                               nullable=True),
+                                    'routes': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(
+                                            type=openapi.TYPE_OBJECT,
+                                            properties={
+                                                'id': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                     description="ID маршрута"),
+                                                'goal': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                       description="Цель маршрута", nullable=True),
+                                                'departure': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                            description="Место отправления",
+                                                                            nullable=True),
+                                                'destination': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                              description="Место назначения",
+                                                                              nullable=True),
+                                                'departure_coordinates': openapi.Schema(
+                                                    type=openapi.TYPE_ARRAY,
+                                                    items=openapi.Schema(type=openapi.TYPE_STRING),
+                                                    description="Координаты отправления [latitude, longitude]"
+                                                ),
+                                                'destination_coordinates': openapi.Schema(
+                                                    type=openapi.TYPE_ARRAY,
+                                                    items=openapi.Schema(type=openapi.TYPE_STRING),
+                                                    description="Координаты назначения [latitude, longitude]"
+                                                ),
+                                                'time': openapi.Schema(type=openapi.TYPE_STRING, description="Время",
+                                                                       nullable=True),
+                                                'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER,
+                                                                              description="Количество использований"),
+                                                'start_time': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                             description="Время начала", nullable=True),
+                                                'end_time': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                           description="Время окончания",
+                                                                           nullable=True),
+                                                'travel_date': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                              description="Дата поездки",
+                                                                              nullable=True),
+                                                'transport_type': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                                 description="Тип транспорта",
+                                                                                 nullable=True),
+                                            }
+                                        )
+                                    )
+                                }
+                            )
                         )
                     }
                 )
@@ -773,18 +941,28 @@ class RequestCreateView(APIView):
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
-
                 'date': openapi.Schema(type=openapi.TYPE_STRING, format='date', example="2025-05-01"),
                 'user': openapi.Schema(type=openapi.TYPE_STRING, example="6616df89148ebd7980e22f9f"),
                 'routes': openapi.Schema(
                     type=openapi.TYPE_ARRAY,
-                    items=openapi.Items(
+                    items=openapi.Schema(
                         type=openapi.TYPE_OBJECT,
                         properties={
                             'goal': openapi.Schema(type=openapi.TYPE_STRING, example="В командировку в Бишкек"),
                             'departure': openapi.Schema(type=openapi.TYPE_STRING, example="Офис"),
                             'destination': openapi.Schema(type=openapi.TYPE_STRING, example="Аэропорт"),
-
+                            'departure_coordinates': openapi.Schema(
+                                type=openapi.TYPE_ARRAY,
+                                items=openapi.Schema(type=openapi.TYPE_STRING),
+                                example=["42.8746", "74.5698"],
+                                description="List of [latitude, longitude] for departure"
+                            ),
+                            'destination_coordinates': openapi.Schema(
+                                type=openapi.TYPE_ARRAY,
+                                items=openapi.Schema(type=openapi.TYPE_STRING),
+                                example=["42.8167", "74.6167"],
+                                description="List of [latitude, longitude] for destination"
+                            ),
                             'time': openapi.Schema(type=openapi.TYPE_STRING, example="11:00"),
                         }
                     )
@@ -792,9 +970,7 @@ class RequestCreateView(APIView):
             },
             required=['user']
         ),
-        responses={201: RequestCreateSerializer},
-        operation_summary="Создание заявки с маршрутами",
-        operation_description="Создает новую заявку с маршрутами. `comments` и `status` будут пустыми."
+        responses={201: RequestCreateSerializer}
     )
     def post(self, request):
         serializer = RequestCreateSerializer(data=request.data)
@@ -810,7 +986,7 @@ class RequestDetail(APIView):
     def get_object(self, pk):
         try:
             return Request.objects.get(id=ObjectId(pk))
-        except (DoesNotExist, ObjectId.InvalidId):
+        except (ObjectDoesNotExist, ObjectId.InvalidId):
             return None
 
     def send_status_notification(self, request_obj, new_status):
@@ -821,13 +997,13 @@ class RequestDetail(APIView):
         user_token = DeviceToken.objects(user=request_obj.user).first()
         driver_token = DeviceToken.objects(user=request_obj.driver).first() if request_obj.driver else None
 
-        if user_token and new_status in [2, 3]:
-            title = "Заявка одобрена" if new_status == 2 else "Заявка отклонена"
-            body = (f"Ваша заявка от {request_obj.date} была одобрена." if new_status == 2
+        if user_token and new_status in [1, 2]:
+            title = "Заявка одобрена" if new_status == 1 else "Заявка отклонена"
+            body = (f"Ваша заявка от {request_obj.date} была одобрена." if new_status == 1
                     else f"Ваша заявка от {request_obj.date} была отклонена. Причина: {request_obj.comments or 'Не указана'}.")
             send_push_notification_to_user(request_obj.user, title, body)
 
-        if driver_token and new_status == 2 and (not user_token or driver_token.fcm_token != user_token.fcm_token):
+        if driver_token and new_status == 1 and (not user_token or driver_token.fcm_token != user_token.fcm_token):
             driver_title = f"Заявка {status_text}"
             route_info = f"{request_obj.routes[0].departure} → {request_obj.routes[0].destination}" if request_obj.routes else "Маршрут не указан"
             driver_body = f"Статус заявки от {request_obj.user.name or request_obj.user.email} на {request_obj.date} изменён на '{status_text}'. Маршрут: {route_info}."
@@ -837,7 +1013,7 @@ class RequestDetail(APIView):
         operation_description="Получить информацию о заявке по ID",
         responses={
             200: RequestSerializer,
-            404: "Заявка не найдена"
+            404: openapi.Response(description="Заявка не найдена")
         }
     )
     def get(self, request, pk):
@@ -852,9 +1028,9 @@ class RequestDetail(APIView):
         request_body=RequestSerializer,
         responses={
             200: RequestSerializer,
-            400: "Неверные данные",
-            403: "Нет прав на изменение",
-            404: "Заявка не найдена"
+            400: openapi.Response(description="Неверные данные"),
+            403: openapi.Response(description="Нет прав на изменение"),
+            404: openapi.Response(description="Заявка не найдена")
         }
     )
     def put(self, request, pk):
@@ -883,9 +1059,9 @@ class RequestDetail(APIView):
         request_body=RequestSerializer,
         responses={
             200: RequestSerializer,
-            400: "Неверные данные",
-            403: "Нет прав на изменение",
-            404: "Заявка не найдена"
+            400: openapi.Response(description="Неверные данные"),
+            403: openapi.Response(description="Нет прав на изменение"),
+            404: openapi.Response(description="Заявка не найдена")
         }
     )
     def patch(self, request, pk):
@@ -907,7 +1083,6 @@ class RequestDetail(APIView):
             if 'status' in request.data:
                 self.send_status_notification(request_obj, request.data['status'])
             return Response(serializer.data)
-
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -935,7 +1110,7 @@ class FastRequestListView(APIView):
             openapi.Parameter(
                 'status',
                 openapi.IN_QUERY,
-                description="Фильтр по статусу заявки (0: Created, 1: In Progress, 2: Completed, 3: Rejected)",
+                description="Фильтр по статусу заявки (0: In Progress, 1: Confirm, 2: Rejected)",
                 type=openapi.TYPE_INTEGER,
                 required=False
             ),
@@ -964,7 +1139,8 @@ class FastRequestListView(APIView):
                                 type=openapi.TYPE_OBJECT,
                                 properties={
                                     'id': openapi.Schema(type=openapi.TYPE_STRING, description="ID заявки"),
-                                    'date': openapi.Schema(type=openapi.TYPE_STRING, description="Дата заявки"),
+                                    'date': openapi.Schema(type=openapi.TYPE_STRING, description="Дата заявки",
+                                                           nullable=True),
                                     'user': openapi.Schema(type=openapi.TYPE_STRING,
                                                            description="Имя создателя заявки"),
                                     'driver': openapi.Schema(type=openapi.TYPE_STRING, description="Имя водителя",
@@ -979,22 +1155,39 @@ class FastRequestListView(APIView):
                                         items=openapi.Schema(
                                             type=openapi.TYPE_OBJECT,
                                             properties={
-                                                'id': openapi.Schema(type=openapi.TYPE_STRING),
-                                                'goal': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
-                                                'departure': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
-                                                'destination': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
-                                                'time': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
-                                                'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                                'id': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                     description="ID маршрута"),
+                                                'goal': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                       description="Цель маршрута", nullable=True),
+                                                'departure': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                            description="Место отправления",
+                                                                            nullable=True),
+                                                'destination': openapi.Schema(type=openapi.TYPE_STRING,
+                                                                              description="Подснежный", nullable=True),
+                                                'departure_coordinates': openapi.Schema(
+                                                    type=openapi.TYPE_ARRAY,
+                                                    items=openapi.Schema(type=openapi.TYPE_STRING),
+                                                    description="Координаты отправления [latitude, longitude]"
+                                                ),
+                                                'destination_coordinates': openapi.Schema(
+                                                    type=openapi.TYPE_ARRAY,
+                                                    items=openapi.Schema(type=openapi.TYPE_STRING),
+                                                    description="Координаты назначения [latitude, longitude]"
+                                                ),
+                                                'time': openapi.Schema(type=openapi.TYPE_STRING, description="Время",
+                                                                       nullable=True),
+                                                'usage_count': openapi.Schema(type=openapi.TYPE_INTEGER,
+                                                                              description="Количество использований")
                                             }
                                         )
-                                    ),
+                                    )
                                 }
                             )
                         )
                     }
                 )
             ),
-            400: openapi.Response(description="Неверные параметры запроса"),
+            400: openapi.Response(description="Неверные параметры запроса")
         }
     )
     def get(self, request):
@@ -1009,13 +1202,12 @@ class FastRequestListView(APIView):
             return Response({"error": "Invalid pagination or filter parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
         pipeline = []
-
         match_stage = {}
         if status_filter is not None:
             try:
                 status_filter = int(status_filter)
-                if status_filter not in [0, 1, 2, 3]:
-                    return Response({"error": "Invalid status value. Must be 0, 1, 2, or 3."},
+                if status_filter not in [0, 1, 2]:
+                    return Response({"error": "Invalid status value. Must be 0, 1, or 2."},
                                     status=status.HTTP_400_BAD_REQUEST)
                 match_stage["status"] = status_filter
             except ValueError:
@@ -1023,18 +1215,17 @@ class FastRequestListView(APIView):
 
         if username_filter:
             user_ids = [user.id for user in User.objects(name__icontains=username_filter)]
-            if user_ids:
-                match_stage["$or"] = [
-                    {"user": {"$in": user_ids}},
-                    {"driver": {"$in": user_ids}}
-                ]
-            else:
+            if not user_ids:
                 return Response({
                     "count": 0,
                     "next": None,
                     "previous": None,
                     "results": []
                 })
+            match_stage["$or"] = [
+                {"user": {"$in": user_ids}},
+                {"driver": {"$in": user_ids}}
+            ]
 
         if match_stage:
             pipeline.append({"$match": match_stage})
@@ -1050,8 +1241,8 @@ class FastRequestListView(APIView):
             {
                 "$lookup": {
                     "from": "route",
-                    "localField": "_id",
-                    "foreignField": "request",
+                    "localField": "routes",
+                    "foreignField": "_id",
                     "as": "routes"
                 }
             },
@@ -1096,9 +1287,10 @@ class FastRequestListView(APIView):
                     "goal": route.get("goal"),
                     "departure": route.get("departure"),
                     "destination": route.get("destination"),
+                    "departure_coordinates": route.get("departure_coordinates", []),
+                    "destination_coordinates": route.get("destination_coordinates", []),
                     "time": route.get("time"),
                     "usage_count": route.get("usage_count", 0),
-                    "request": str(route["request"]) if route.get("request") else None
                 }
                 formatted_item["routes"].append(formatted_route)
 

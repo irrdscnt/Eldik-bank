@@ -50,10 +50,10 @@ class RouteSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     departure = serializers.CharField(required=False, allow_blank=True)
     destination = serializers.CharField(required=False, allow_blank=True)
+    departure_coordinates = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
+    destination_coordinates = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
     time = serializers.CharField(required=False, allow_blank=True)
-    # waiting_time = serializers.IntegerField(required=False, allow_null=True)
     usage_count = serializers.IntegerField(read_only=True)
-    request = serializers.CharField(required=False, allow_null=True)
     start_time = serializers.DateTimeField(required=False, allow_null=True)
     end_time = serializers.DateTimeField(required=False, allow_null=True)
     travel_date = serializers.DateTimeField(required=False, allow_null=True)
@@ -61,22 +61,17 @@ class RouteSerializer(serializers.Serializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        data['request'] = str(instance.request.id) if instance.request else None
         data['start_time'] = instance.start_time.isoformat() if instance.start_time else None
         data['end_time'] = instance.end_time.isoformat() if instance.end_time else None
         data['travel_date'] = instance.travel_date.isoformat() if instance.travel_date else None
+        data['departure_coordinates'] = instance.departure_coordinates if instance.departure_coordinates else []
+        data['destination_coordinates'] = instance.destination_coordinates if instance.destination_coordinates else []
         return data
 
     def create(self, validated_data):
-        request_id = validated_data.pop("request", None)
-        if request_id:
-            validated_data["request"] = Request.objects.get(id=ObjectId(request_id))
         return Route.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
-        if "request" in validated_data:
-            request_id = validated_data.pop("request")
-            validated_data["request"] = Request.objects.get(id=ObjectId(request_id))
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -103,7 +98,7 @@ class RequestSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     {"detail": "Dispatchers can only update status, comments, and driver."})
 
-            if data.get('status') == 3:
+            if data.get('status') == 2:
                 comments = data.get('comments', '').strip()
                 if not comments:
                     raise serializers.ValidationError({"comments": "Comments are required when rejecting a request."})
@@ -123,8 +118,9 @@ class RequestSerializer(serializers.Serializer):
         status_choices = dict(Request.STATUS_CHOICES)
         representation['status_text'] = status_choices.get(instance.status, "Unknown")
         representation["id"] = str(instance.id)
+        representation["user"] = str(instance.user.id)
         representation["driver"] = str(instance.driver.id) if instance.driver else None
-        route_objects = Route.objects(request=instance)
+        route_objects = instance.routes
         representation['routes'] = RouteSerializer(route_objects, many=True).data
         return representation
 
@@ -135,13 +131,24 @@ class RequestSerializer(serializers.Serializer):
         validated_data["user"] = User.objects.get(id=ObjectId(user_id))
         if driver_id:
             validated_data["driver"] = User.objects.get(id=ObjectId(driver_id))
-        request = Request.objects.create(**validated_data)
 
         route_refs = []
         for route_data in routes_data:
-            route = Route.objects.create(request=request, **route_data)
+            existing_route = Route.objects(
+                departure=route_data.get("departure"),
+                destination=route_data.get("destination")
+            ).order_by("-usage_count").first()
+
+            if existing_route:
+                route_data["usage_count"] = existing_route.usage_count + 1
+                route = existing_route
+                route.update(**route_data)
+            else:
+                route_data["usage_count"] = 1
+                route = Route.objects.create(**route_data)
             route_refs.append(route)
 
+        request = Request.objects.create(**validated_data)
         request.routes = route_refs
         request.save()
         return request
@@ -153,7 +160,24 @@ class RequestSerializer(serializers.Serializer):
         if "driver" in validated_data:
             driver_id = validated_data.pop("driver", None)
             validated_data["driver"] = User.objects.get(id=ObjectId(driver_id)) if driver_id else None
-        validated_data.pop("routes", None)
+        routes_data = validated_data.pop("routes", None)
+        if routes_data:
+            route_refs = []
+            for route_data in routes_data:
+                existing_route = Route.objects(
+                    departure=route_data.get("departure"),
+                    destination=route_data.get("destination")
+                ).order_by("-usage_count").first()
+
+                if existing_route:
+                    route_data["usage_count"] = existing_route.usage_count + 1
+                    route = existing_route
+                    route.update(**route_data)
+                else:
+                    route_data["usage_count"] = 1
+                    route = Route.objects.create(**route_data)
+                route_refs.append(route)
+            instance.routes = route_refs
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -162,7 +186,6 @@ class RequestSerializer(serializers.Serializer):
 
 class RequestCreateSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
-    # goal = serializers.CharField(required=False, allow_blank=True)
     date = serializers.DateField(required=False, allow_null=True)
     user = serializers.CharField()
     routes = RouteSerializer(many=True, required=False)
@@ -172,23 +195,27 @@ class RequestCreateSerializer(serializers.Serializer):
         user_id = validated_data.pop("user")
         validated_data["user"] = User.objects.get(id=ObjectId(user_id))
 
+        route_refs = []
+        for route_data in routes_data:
+            existing_route = Route.objects(
+                departure=route_data.get("departure"),
+                destination=route_data.get("destination")
+            ).order_by("-usage_count").first()
+
+            if existing_route:
+                route_data["usage_count"] = existing_route.usage_count + 1
+                route = existing_route
+                route.update(**route_data)
+            else:
+                route_data["usage_count"] = 1
+                route = Route.objects.create(**route_data)
+            route_refs.append(route)
+
         request = Request.objects.create(
             **validated_data,
             status=None,
             comments=""
         )
-
-        for route_data in routes_data:
-            existing_route = Route.objects(
-                departure=route_data.get("departure"),
-                destination=route_data.get("destination"),
-            ).order_by("-usage_count").first()
-
-            if existing_route:
-                route_data["usage_count"] = existing_route.usage_count + 1
-            else:
-                route_data["usage_count"] = 1
-
-            Route.objects.create(request=request, **route_data)
-
+        request.routes = route_refs
+        request.save()
         return request

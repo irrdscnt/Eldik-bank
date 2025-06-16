@@ -14,7 +14,6 @@ class Request(Document):
         (1, 'Confirm'),
         (2, 'Rejected'),
     )
-
     date = DateField(null=True)
     user = ReferenceField(User, reverse_delete_rule=2)
     driver = ReferenceField(User, null=True, reverse_delete_rule=2)
@@ -43,8 +42,8 @@ class Route(Document):
     goal = StringField(null=True)
     departure = StringField(max_length=255, null=True)
     destination = StringField(max_length=255, null=True)
-    # waiting_time = IntField(null=True)
-    request = ReferenceField(Request, reverse_delete_rule=2)
+    departure_coordinates = ListField(StringField(), default=list)  # [latitude, longitude]
+    destination_coordinates = ListField(StringField(), default=list)  # [latitude, longitude]
     time = StringField(max_length=100, null=True)
     usage_count = IntField(default=0)
     start_time = DateTimeField(null=True)
