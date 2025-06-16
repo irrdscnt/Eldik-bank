@@ -6,7 +6,6 @@ from .views import *
 from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
-
 schema_view = get_schema_view(
     openapi.Info(
         title="Car Rental API",
@@ -14,6 +13,7 @@ schema_view = get_schema_view(
         description="API для аренды автомобилей",
     ),
     public=True,
+    permission_classes=(permissions.AllowAny,),
 )
 
 urlpatterns = [
@@ -27,5 +27,7 @@ urlpatterns = [
 
     path('drivers/', CarUserListCreateAPIView.as_view(), name='car-user-list-create'),
     path('drivers/<str:pk>/', CarUserDetailAPIView.as_view(), name='car-user-detail'),
+
+    path('export-requests-excel/', ExportExcelAPIView.as_view(), name='export-requests-excel'),
 
 ]

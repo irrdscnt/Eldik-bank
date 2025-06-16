@@ -33,6 +33,158 @@
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
+        const markers = {};
+        const paths = {};
+        const polylines = {};
+        let trackingInterval = null;
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                output.textContent += "\n📥 Получено: " + JSON.stringify(data);
+
+                const { user_id, coordinates, role, location_text } = data;
+                if (!Array.isArray(coordinates) || coordinates.length !== 2) return;
+
+                const lat = parseFloat(coordinates[0]);
+                const lng = parseFloat(coordinates[1]);
+                if (isNaN(lat) || isNaN(lng)) return;
+
+                const latestPos = [lat, lng];
+                if (!paths[user_id]) paths[user_id] = [];
+                paths[user_id].push(latestPos);
+
+                if (!markers[user_id]) {
+                    const icon = L.icon({
+                        iconUrl: role === 'driver'
+                            ? 'https://cdn-icons-png.flaticon.com/512/3448/3448449.png'
+                            : 'https://cdn-icons-png.flaticon.com/512/1077/1077012.png',
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 15]
+                    });
+
+                    markers[user_id] = L.marker(latestPos, { icon }).addTo(map)
+                        .bindPopup(`${role}: ${user_id}`);
+                } else {
+                    markers[user_id].setLatLng(latestPos);
+                }
+
+                markers[user_id].bindTooltip(location_text || "", { permanent: false });
+
+                if (polylines[user_id]) {
+                    polylines[user_id].setLatLngs(paths[user_id]);
+                } else {
+                    polylines[user_id] = L.polyline(paths[user_id], {
+                        color: role === 'driver' ? 'blue' : 'green',
+                        weight: 3,
+                        opacity: 0.7
+                    }).addTo(map);
+                }
+
+                map.setView(latestPos, 15);
+            } catch (err) {
+                console.error("Ошибка обработки:", err);
+            }
+        };
+
+        async function sendLocation() {
+            if (!navigator.geolocation) {
+                output.textContent += "\n⚠️ Геолокация не поддерживается этим браузером.";
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                try {
+                    const lat = pos.coords.latitude.toString();
+                    const lng = pos.coords.longitude.toString();
+
+                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
+                    const data = await response.json();
+                    const address = data.display_name || "Адрес не найден";
+
+                    const sendData = {
+                        user_id: document.getElementById("userId").value,
+                        role: document.getElementById("role").value,
+                        coordinates: [lat, lng],
+                        location_text: address
+                    };
+
+                    socket.send(JSON.stringify(sendData));
+                    output.textContent += "\n📤 Отправлено: " + JSON.stringify(sendData);
+                } catch (error) {
+                    output.textContent += "\n⚠️ Ошибка геокодирования или отправки: " + error;
+
+                    const fallbackData = {
+                        user_id: document.getElementById("userId").value,
+                        role: document.getElementById("role").value,
+                        coordinates: [pos.coords.latitude.toString(), pos.coords.longitude.toString()],
+                        location_text: "Адрес не найден"
+                    };
+                    socket.send(JSON.stringify(fallbackData));
+                    output.textContent += "\n📤 Отправлено с fallback: " + JSON.stringify(fallbackData);
+                }
+            }, (error) => {
+                output.textContent += "\n⚠️ Ошибка получения геопозиции: " + error.message;
+            });
+        }
+
+        function startTracking() {
+            if (!trackingInterval) {
+                sendLocation();
+                trackingInterval = setInterval(sendLocation, 1000); // 🔁 раз в секунду
+                output.textContent += "\n▶️ Отслеживание запущено\n";
+            }
+        }
+
+        function stopTracking() {
+            if (trackingInterval) {
+                clearInterval(trackingInterval);
+                trackingInterval = null;
+                output.textContent += "\n⏹ Отслеживание остановлено\n";
+            }
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Live Tracker with Route</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map { height: 500px; width: 100%; margin-top: 20px; }
+        body { font-family: sans-serif; padding: 20px; }
+    </style>
+</head>
+<body>
+    <h2>🛰 Live Tracker with Movement Trail</h2>
+    <label>User ID: <input id="userId" type="text" value="user123"></label><br>
+    <label>Role:
+        <select id="role">
+            <option value="user">User</option>
+            <option value="driver">Driver</option>
+        </select>
+    </label><br>
+    <button onclick="startTracking()">▶️ Start Tracking</button>
+    <button onclick="stopTracking()">⏹ Stop</button>
+    <pre id="output"></pre>
+    <div id="map"></div>
+
+    <script>
+        const socket = new WebSocket("ws://localhost:8000/ws/location/");
+        const output = document.getElementById("output");
+
+        const map = L.map('map').setView([42.87, 74.61], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
         const markers = {};       // user_id => marker
         const paths = {};         // user_id => array of [lat, lng]
         const polylines = {};     // user_id => polyline
@@ -269,7 +421,7 @@
         // }
     </script>
 </body>
-</html>
+</html> -->
 
 
 <!-- <!DOCTYPE html>

@@ -13,7 +13,6 @@ from rest_framework.generics import GenericAPIView, ListAPIView
 from django.shortcuts import get_object_or_404
 from mongoengine.errors import DoesNotExist, ValidationError as MongoValidationError
 from rest_framework.exceptions import NotFound
-import openpyxl
 from openpyxl.utils import get_column_letter
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
@@ -34,6 +33,18 @@ from datetime import datetime
 import csv
 from collections import defaultdict
 from django.http import HttpResponse
+
+import pandas as pd
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.http import FileResponse
+from io import BytesIO
+from datetime import datetime
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from core_requests.models import Request  
+from core_requests.models import Car, Car_user, Route, Trip
 
 
 def test_location_view(request):
@@ -298,3 +309,62 @@ class CarUserDetailAPIView(APIView):
         car_user = self.get_object(pk)
         car_user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+STATUS_TRANSLATION = {
+    0: "В процессе",
+    1: "Подтверждено",
+    2: "Отклонено"
+}
+
+class ExportExcelAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Экспорт всех заявок в формате Excel с подробными данными и проверкой машины водителя",
+        responses={200: "Файл Excel"}
+    )
+    def get(self, request):
+        data = []
+
+        # Загрузим всех Car_user заранее в словарь: ключ - user.id, значение - Car_user объект
+        car_users = {str(cu.user.id): cu for cu in Car_user.objects}
+
+        for req in Request.objects:
+            for route in req.routes:
+                driver = req.driver
+                cu = car_users.get(str(driver.id)) if driver else None
+
+                driver_name = driver.name if driver and cu else "—"
+                car_info = f"Машина ID: {cu.car.id}" if cu else "Нет машины"
+
+                row = {
+                    "Имя пользователя": req.user.name if req.user else "—",
+                    "Имя водителя": driver_name,
+                    "Статус": STATUS_TRANSLATION.get(req.status, "Неизвестно"),
+                    "Комментарий": req.comments or "",
+                    "Дата заявки": req.date.strftime("%Y-%m-%d") if req.date else "",
+                    "Откуда": route.departure or "",
+                    "Куда": route.destination or "",
+                    "Цель поездки": route.goal or "",
+                    "Время (длительность)": route.time or "",
+                    "Время начала": route.start_time.strftime("%Y-%m-%d %H:%M") if route.start_time else "",
+                    "Время окончания": route.end_time.strftime("%Y-%m-%d %H:%M") if route.end_time else "",
+                    "Дата поездки": route.travel_date.strftime("%Y-%m-%d") if route.travel_date else "",
+                    "Тип транспорта": {
+                        "passenger": "пассажирский",
+                        "cargo": "грузовой",
+                        "light": "легковой"
+                    }.get(route.transport_type, ""),
+                    "Статус машины": car_info,
+                }
+                data.append(row)
+
+        df = pd.DataFrame(data)
+        output = BytesIO()
+        df.to_excel(output, index=False)
+        output.seek(0)
+
+        filename = f"Заявки_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.xlsx"
+        response = FileResponse(output, as_attachment=True, filename=filename)
+        return response

@@ -35,6 +35,9 @@ class LocationSerializer(serializers.Serializer):
     longitude = serializers.CharField()
 
 
+from rest_framework import serializers
+from bson import ObjectId
+
 class CarUserSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     user = serializers.CharField()
@@ -43,31 +46,38 @@ class CarUserSerializer(serializers.Serializer):
     location_history = LocationSerializer(many=True, required=False)
 
     def create(self, validated_data):
-        user = User.objects.get(id=validated_data['user'])
-        car = Car.objects.get(id=validated_data['car'])
-        location_history = validated_data.get("location_history", [])
+        user = User.objects.get(id=ObjectId(validated_data['user']))
+        car = Car.objects.get(id=ObjectId(validated_data['car']))
+        
+        existing = Car_user.objects(car=car).first()
+        if existing:
+            raise serializers.ValidationError("This car is already assigned to another user.")
 
-        car_user = Car_user.objects.create(
+        return Car_user.objects.create(
             user=user,
             car=car,
             status=validated_data.get("status"),
-            location_history=location_history
+            location_history=[Location(**loc) for loc in validated_data.get("location_history", [])]
         )
-        return car_user
 
     def update(self, instance, validated_data):
-        if 'user' in validated_data:
-            user_id = validated_data.pop('user')
-            instance.user = User.objects.get(id=ObjectId(user_id))
-
         if 'car' in validated_data:
-            car_id = validated_data.pop('car')
-            instance.car = Car.objects.get(id=ObjectId(car_id))
+            car = Car.objects.get(id=ObjectId(validated_data['car']))
+            # Ключевая проверка!
+            existing = Car_user.objects(car=car, id__ne=instance.id).first()
+            if existing:
+                raise serializers.ValidationError("This car is already assigned to another user.")
+            instance.car = car
+
+        if 'user' in validated_data:
+            instance.user = User.objects.get(id=ObjectId(validated_data['user']))
+
         if 'location_history' in validated_data:
-            locations = validated_data.pop('location_history')
-            instance.location_history = [Location(**loc) for loc in locations]
+            instance.location_history = [Location(**loc) for loc in validated_data['location_history']]
+
         for attr, value in validated_data.items():
-            setattr(instance, attr, value)
+            if attr not in ['car', 'user', 'location_history']:
+                setattr(instance, attr, value)
 
         instance.save()
         return instance
