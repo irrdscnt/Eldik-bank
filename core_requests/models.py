@@ -81,24 +81,47 @@ class OdometerReading(Document):
 
     @classmethod
     def calculate_no_goal_mileage(cls, current_request):
+
         current_reading = cls.objects(request=current_request).first()
-        if not current_reading or current_reading.start_odometer is None:
+        if not current_reading:
+            return
+        if current_reading.start_odometer is None:
             return
 
         car = current_reading.car
         if not car:
             return
 
-        previous_requests = Request.objects(
+        previous_reading = cls.objects(
             driver=current_request.driver,
-            id__ne=current_request.id,
-            date__lte=current_request.date
-        ).order_by('-date', '-id')
+            request__ne=current_request,
+            created_at__lte=current_reading.created_at,
+            car=car
+        ).order_by('-created_at', '-id').first()
 
-        for req in previous_requests:
-            reading = cls.objects(request=req).first()
-            if reading and reading.car == car and reading.end_odometer is not None and reading.no_goal_mileage is None:
-                no_goal_mileage = abs(current_reading.start_odometer - reading.end_odometer)
-                reading.no_goal_mileage = no_goal_mileage
-                reading.save()
-                return
+        if not previous_reading:
+            return
+
+
+        if previous_reading.end_odometer is None:
+            return
+
+
+        if previous_reading.no_goal_mileage is None:
+            no_goal_mileage = abs(current_reading.start_odometer - previous_reading.end_odometer)
+            previous_reading.no_goal_mileage = no_goal_mileage
+            try:
+                previous_reading.save()
+
+                saved_reading = cls.objects(request=previous_reading.request).first()
+                if saved_reading.no_goal_mileage == no_goal_mileage:
+                    print(
+                        f"Verified")
+                else:
+                    print(
+                        f"Error: no_goal_mileage not saved correctly for request")
+            except Exception as e:
+                print(f"Error saving no_goal_mileage for request")
+        else:
+            print(
+                f"Skipping: no_goal_mileage already set")
