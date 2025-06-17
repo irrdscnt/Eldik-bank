@@ -29,5 +29,5 @@ urlpatterns = [
     path('drivers/<str:pk>/', CarUserDetailAPIView.as_view(), name='car-user-detail'),
 
     path('export-requests-excel/', ExportExcelAPIView.as_view(), name='export-requests-excel'),
-
+    path('export-user-activity-excel/', DownloadUserActivityReport.as_view(), name='export-user-activity-excel'),
 ]

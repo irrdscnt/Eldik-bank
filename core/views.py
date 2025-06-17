@@ -33,14 +33,14 @@ from datetime import datetime
 import csv
 from collections import defaultdict
 from django.http import HttpResponse
-
+import io
 import pandas as pd
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.http import FileResponse
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime,timedelta
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from core_requests.models import Request  
@@ -327,7 +327,6 @@ class ExportExcelAPIView(APIView):
     def get(self, request):
         data = []
 
-        # Загрузим всех Car_user заранее в словарь: ключ - user.id, значение - Car_user объект
         car_users = {str(cu.user.id): cu for cu in Car_user.objects}
 
         for req in Request.objects:
@@ -336,7 +335,7 @@ class ExportExcelAPIView(APIView):
                 cu = car_users.get(str(driver.id)) if driver else None
 
                 driver_name = driver.name if driver and cu else "—"
-                car_info = f"Машина ID: {cu.car.id}" if cu else "Нет машины"
+                car_info = cu.car.name if cu and hasattr(cu.car, "name") else "Нет машины"
 
                 row = {
                     "Имя пользователя": req.user.name if req.user else "—",
@@ -356,15 +355,99 @@ class ExportExcelAPIView(APIView):
                         "cargo": "грузовой",
                         "light": "легковой"
                     }.get(route.transport_type, ""),
-                    "Статус машины": car_info,
+                    "Название машины": car_info,
                 }
                 data.append(row)
 
         df = pd.DataFrame(data)
-        output = BytesIO()
-        df.to_excel(output, index=False)
-        output.seek(0)
 
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Заявки')
+
+            worksheet = writer.sheets['Заявки']
+            for i, column in enumerate(df.columns, 1):
+                max_length = max(
+                    df[column].astype(str).map(len).max(),
+                    len(str(column))
+                ) + 2  
+                worksheet.column_dimensions[get_column_letter(i)].width = max_length
+
+        output.seek(0)
         filename = f"Заявки_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.xlsx"
         response = FileResponse(output, as_attachment=True, filename=filename)
+        return response
+
+class DownloadUserActivityReport(APIView):
+    @swagger_auto_schema(
+        operation_summary="Скачать отчёт по активности пользователей (Excel)",
+        manual_parameters=[
+            openapi.Parameter(
+                'start_date', openapi.IN_QUERY, description="Начальная дата (YYYY-MM-DD)",
+                type=openapi.TYPE_STRING, required=False
+            ),
+            openapi.Parameter(
+                'end_date', openapi.IN_QUERY, description="Конечная дата (YYYY-MM-DD)",
+                type=openapi.TYPE_STRING, required=False
+            )
+        ],
+        responses={200: 'Файл Excel с отчётом'}
+    )
+    def get(self, request):
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        users = User.objects(role='user')
+        data = []
+
+        for user in users:
+            requests = Request.objects(user=user)
+
+            if start_date:
+                requests = requests.filter(date__gte=start_date)
+            if end_date:
+                requests = requests.filter(date__lte=end_date)
+
+            confirmed = requests.filter(status=1).count()
+            rejected_requests = requests.filter(status=2)
+            rejected = rejected_requests.count()
+
+            # Собираем комментарии из отклонённых заявок
+            rejected_comments = []
+            for req in rejected_requests:
+                if req.comments:
+                    rejected_comments.append(req.comments.strip())
+
+            total_time = timedelta()
+            for req in requests:
+                for route in req.routes:
+                    if route.start_time and route.end_time:
+                        duration = route.end_time - route.start_time
+                        if duration.total_seconds() > 0:
+                            total_time += duration
+
+            data.append({
+                "Имя пользователя": user.name or user.email,
+                "Подразделение": user.subdepartment or "",
+                "Создано заявок": requests.count(),
+                "Одобрено заявок": confirmed,
+                "Отклонено заявок": rejected,
+                "Комментарии к отклонённым заявкам": "; ".join(rejected_comments),
+                "Общее время поездок": str(total_time),
+            })
+
+
+        df = pd.DataFrame(data)
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Отчёт')
+            worksheet = writer.sheets['Отчёт']
+            for i, column in enumerate(df.columns):
+                column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
+                worksheet.set_column(i, i, column_width)
+
+        output.seek(0)
+        response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename="user_activity_report.xlsx"'
         return response
