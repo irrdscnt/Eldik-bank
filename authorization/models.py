@@ -15,6 +15,7 @@ class Role(Enum):
 class User(Document):
     name = StringField(max_length=255, null=True)
     email = EmailField(required=True, unique=True)
+    subdepartment = StringField(max_length=255, null=True)
     number = StringField(max_length=15, null=True)
     password = StringField(required=True)
     role = EnumField(Role, default=Role.USER)

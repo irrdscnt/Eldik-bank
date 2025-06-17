@@ -16,6 +16,7 @@ class UserSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     number = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True)
+    subdepartment = serializers.CharField(required=True)
     role = serializers.ChoiceField(choices=['user', 'admin', 'driver', 'dispetcher'], default='user')
 
     def validate(self, data):
@@ -37,6 +38,7 @@ class UserSerializer(serializers.Serializer):
         instance.email = validated_data.get('email', instance.email)
         instance.number = validated_data.get('number', instance.number)
         instance.role = validated_data.get('role', instance.role)
+        instance.subdepartment = validated_data.get('subdepartment', instance.subdepartment)
 
         if 'password' in validated_data:
             instance.password = make_password(validated_data['password'])

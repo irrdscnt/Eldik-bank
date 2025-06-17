@@ -45,6 +45,7 @@ class RegisterUser(APIView):
                 'number': openapi.Schema(type=openapi.TYPE_STRING),
                 'password': openapi.Schema(type=openapi.TYPE_STRING, format='password'),
                 'role': openapi.Schema(type=openapi.TYPE_STRING, example='user'),
+                'subdepartment': openapi.Schema(type=openapi.TYPE_STRING, description="Subdepartment of the user"),
             },
         ),
         responses={200: 'Verification code sent to email', 400: 'Validation error'},
@@ -65,8 +66,10 @@ class RegisterUser(APIView):
             email=data['email'],
             name=data['name'],
             number=data['number'],
-            password=make_password(data['password'])
+            password=make_password(data['password']),
+            subdepartment=data.get('subdepartment')
         )
+
         verification.generate_code()
         verification.save()
 
@@ -88,6 +91,7 @@ class EmailVerification(Document):
     name = StringField()
     number = StringField()
     password = StringField()
+    subdepartment = StringField()
     is_reset = BooleanField(default=False)
 
     def generate_code(self):
@@ -102,8 +106,8 @@ class ConfirmRegistration(APIView):
             type=openapi.TYPE_OBJECT,
             required=['email', 'code'],
             properties={
-                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description="Email пользователя"),
-                'code': openapi.Schema(type=openapi.TYPE_STRING, description="Код подтверждения"),
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email'),
+                'code': openapi.Schema(type=openapi.TYPE_STRING),
             }
         ),
         responses={
@@ -117,6 +121,7 @@ class ConfirmRegistration(APIView):
                         'name': openapi.Schema(type=openapi.TYPE_STRING),
                         'email': openapi.Schema(type=openapi.TYPE_STRING),
                         'role': openapi.Schema(type=openapi.TYPE_STRING),
+                        'subdepartment': openapi.Schema(type=openapi.TYPE_STRING),
                     })
                 }
             )),
@@ -127,6 +132,7 @@ class ConfirmRegistration(APIView):
     def post(self, request):
         code = request.data.get('code')
         email = request.data.get('email')
+        print(f"✅ Получено подтверждение: email={email}, code={code}", flush=True)
 
         if not all([code, email]):
             return Response({"detail": "Email and code are required."}, status=400)
@@ -140,24 +146,26 @@ class ConfirmRegistration(APIView):
             email=email,
             number=verification.number,
             password=verification.password,
-            role=Role.USER
+            role=Role.USER,
+            subdepartment=verification.subdepartment
         )
         user.save()
+        print(f" Пользователь создан: {user.email}, subdepartment={user.subdepartment}", flush=True)
 
         verification.is_verified = True
         verification.save()
 
         refresh = RefreshToken.for_user(user)
-        access_token = str(refresh.access_token)
 
         return Response({
-            'access': access_token,
+            'access': str(refresh.access_token),
             'refresh': str(refresh),
             'user': {
                 'id': str(user.id),
                 'name': user.name,
                 'email': user.email,
-                'role': user.role.value
+                'role': user.role.value,
+                'subdepartment': user.subdepartment
             }
         }, status=200)
 
@@ -176,6 +184,7 @@ class LoginView(APIView):
                         'name': openapi.Schema(type=openapi.TYPE_STRING),
                         'email': openapi.Schema(type=openapi.TYPE_STRING),
                         'role': openapi.Schema(type=openapi.TYPE_STRING),
+                        'subdepartment': openapi.Schema(type=openapi.TYPE_STRING),
                     })
                 }
             )),
@@ -199,16 +208,16 @@ class LoginView(APIView):
             return Response({"detail": "Incorrect password."}, status=status.HTTP_401_UNAUTHORIZED)
 
         refresh = RefreshToken.for_user(user)
-        access_token = str(refresh.access_token)
 
         return Response({
-            'access': access_token,
+            'access': str(refresh.access_token),
             'refresh': str(refresh),
             'user': {
                 'id': str(user.id),
                 'name': user.name,
                 'email': user.email,
-                'role': user.role.value
+                'role': user.role.value,
+                'subdepartment': user.subdepartment
             }
         }, status=status.HTTP_200_OK)
 
