@@ -1373,15 +1373,17 @@ class RouteTimeUpdate(APIView):
     def get_route(self, request_id, route_id):
         try:
             request_obj = Request.objects.get(id=ObjectId(request_id))
-            route = Route.objects.get(id=ObjectId(route_id))
-            return route, request_obj
+            routes = Route.objects.get(id=ObjectId(route_id))
+            return routes, request_obj
         except (DoesNotExist, ObjectId.InvalidId):
             return None, None
 
-    def send_time_notification(self, request_obj, route, action):
-        title = f"Поездка {'началась' if action == 'start' else 'завершилась'}"
-        body = (f"Поездка по маршруту {route.departure} → {route.destination} "
-                f"{'началась' if action == 'start' else 'завершилась'} в {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+    def send_time_notification(self, request_obj, routes, action):
+        title = f"Request {'started' if action == 'start' else 'completed'}"
+        body = (
+            f"Request for route {routes.departure} → {routes.destination} "
+            f"{'started' if action == 'start' else 'completed'} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}."
+        )
 
         user_token = DeviceToken.objects(user=request_obj.user).first()
         if user_token:
@@ -1390,44 +1392,46 @@ class RouteTimeUpdate(APIView):
         if request_obj.driver and str(request_obj.driver.id) != str(request_obj.user.id):
             driver_token = DeviceToken.objects(user=request_obj.driver).first()
             if driver_token:
-                driver_title = f"Поездка {'началась' if action == 'start' else 'завершилась'}"
-                driver_body = (f"Ваша поездка по маршруту {route.departure} → {route.destination} "
-                               f"{'началась' if action == 'start' else 'завершилась'} в {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+                driver_title = f"Request {'started' if action == 'start' else 'completed'}"
+                driver_body = (
+                    f"Your request for route {routes.departure} → {routes.destination} "
+                    f"{'started' if action == 'start' else 'completed'} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}."
+                )
                 send_push_notification_to_user(request_obj.driver, driver_title, driver_body)
 
     @swagger_auto_schema(
-        operation_description="Записать время и показания одометра для маршрута в заявке",
+        operation_description="Record time and odometer reading for a route in a request",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 'action': openapi.Schema(type=openapi.TYPE_STRING, enum=['start', 'end'],
-                                         description='Действие: start или end'),
+                                         description='Action: start or end'),
                 'time': openapi.Schema(type=openapi.TYPE_STRING, format='date-time',
-                                       description='Время в формате ISO 8601'),
+                                       description='Time in ISO 8601 format'),
                 'odometer': openapi.Schema(type=openapi.TYPE_NUMBER,
-                                           description='Показания одометра в километрах'),
+                                           description='Odometer reading in kilometers'),
             },
             required=['action', 'odometer']
         ),
         responses={
             200: RouteSerializer,
-            400: "Неверные данные",
-            403: "Нет прав на изменение",
-            404: "Маршрут или заявка не найдены"
+            400: "Invalid data",
+            403: "No permission to edit",
+            404: "Route or request not found"
         }
     )
     def post(self, request, request_id, route_id):
-        route, request_obj = self.get_route(request_id, route_id)
-        if not route or not request_obj:
-            return Response({"detail": "Route or Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        routes, request_obj = self.get_route(request_id, route_id)
+        if not routes or not request_obj:
+            return Response({"error": "Route or Request not found."}, status=status.HTTP_404_NOT_FOUND)
 
         if request_obj.driver and str(request_obj.driver.id) != str(request.user.id):
-            return Response({"detail": "You do not have permission to update this route."},
+            return Response({"error": "You do not have permission to update this route."},
                             status=status.HTTP_403_FORBIDDEN)
 
         action = request.data.get('action')
         if action not in ['start', 'end']:
-            return Response({"detail": "Invalid action. Must be 'start' or 'end'."},
+            return Response({"error": "Invalid action. Must be 'start' or 'end'."},
                             status=status.HTTP_400_BAD_REQUEST)
 
         time_str = request.data.get('time')
@@ -1442,49 +1446,57 @@ class RouteTimeUpdate(APIView):
             if odometer < 0:
                 raise ValueError
         except (ValueError, TypeError):
-            return Response({"detail": "Invalid odometer reading. Must be a non-negative number."},
+            return Response({"error": "Invalid odometer reading. Must be a non-negative number."},
                             status=status.HTTP_400_BAD_REQUEST)
+
+        car_user = Car_user.objects(user=request_obj.driver).first()
+        if not car_user or not car_user.car:
+            return Response({"error": "No car assigned to the driver."}, status=status.HTTP_400_BAD_REQUEST)
 
         odometer_reading = OdometerReading.objects(
             request=request_obj,
-            route=route,
-            driver=request_obj.driver
+            routes=routes,
+            driver=request_obj.driver,
+            car=car_user.car
         ).first()
 
         if not odometer_reading:
             odometer_reading = OdometerReading(
                 request=request_obj,
-                route=route,
+                routes=routes,
                 driver=request_obj.driver,
+                car=car_user.car,
                 created_at=datetime.now()
             )
 
         if action == 'start':
-            if route.start_time:
-                return Response({"detail": "Start time already set."}, status=status.HTTP_400_BAD_REQUEST)
+            if routes.start_time:
+                return Response({"error": "Start time already set."}, status=status.HTTP_400_BAD_REQUEST)
             if odometer_reading.start_odometer is not None:
-                return Response({"detail": "Start odometer already set."}, status=status.HTTP_400_BAD_REQUEST)
-            route.start_time = time
+                return Response({"error": "Start odometer already set."}, status=status.HTTP_400_BAD_REQUEST)
+            routes.start_time = time
             odometer_reading.start_odometer = odometer
         else:
-            if not route.start_time:
-                return Response({"detail": "Cannot set end time before start time."},
+            if not routes.start_time:
+                return Response({"error": "Cannot set end time before start time."},
                                 status=status.HTTP_400_BAD_REQUEST)
-            if route.end_time:
-                return Response({"detail": "End time already set."}, status=status.HTTP_400_BAD_REQUEST)
+            if routes.end_time:
+                return Response({"error": "End time already set."}, status=status.HTTP_400_BAD_REQUEST)
             if odometer_reading.end_odometer is not None:
-                return Response({"detail": "End odometer already set."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": "End odometer already set."}, status=status.HTTP_400_BAD_REQUEST)
             if odometer_reading.start_odometer is not None and odometer < odometer_reading.start_odometer:
-                return Response({"detail": "End odometer cannot be less than start odometer."},
+                return Response({"error": "End odometer cannot be less than start odometer."},
                                 status=status.HTTP_400_BAD_REQUEST)
-            route.end_time = time
+            routes.end_time = time
             odometer_reading.end_odometer = odometer
 
-        route.save()
+        request_obj.car = car_user.car
+        request_obj.save()
+        routes.save()
         odometer_reading.save()
 
         OdometerReading.calculate_no_goal_mileage(request_obj)
 
-        self.send_time_notification(request_obj, route, action)
-        serializer = RouteSerializer(route)
+        self.send_time_notification(request_obj, routes, action)
+        serializer = RouteSerializer(routes)
         return Response(serializer.data, status=status.HTTP_200_OK)

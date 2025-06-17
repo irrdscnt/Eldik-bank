@@ -68,27 +68,37 @@ class Trip(Document):
 
 class OdometerReading(Document):
     request = ReferenceField(Request, reverse_delete_rule=2)
-    route = ReferenceField(Route, reverse_delete_rule=2)
+    routes = ReferenceField(Route, reverse_delete_rule=2)
     driver = ReferenceField(User, reverse_delete_rule=2)
+    car = ReferenceField(Car, null=True, reverse_delete_rule=2)
     start_odometer = FloatField(null=True)
     end_odometer = FloatField(null=True)
     no_goal_mileage = FloatField(null=True)
     created_at = DateTimeField(default=datetime.now)
 
     def __str__(self):
-        return f"Odometer for Route {self.route} in Request {self.request}"
+        return f"Odometer for Route {self.routes} in Request {self.request}"
 
     @classmethod
-    def calculate_no_goal_mileage(cls, request):
-        if len(request.routes) < 2:
+    def calculate_no_goal_mileage(cls, current_request):
+        current_reading = cls.objects(request=current_request).first()
+        if not current_reading or current_reading.start_odometer is None:
             return
 
-        readings = cls.objects(request=request).order_by('created_at')
-        for i in range(len(readings) - 1):
-            current_reading = readings[i]
-            next_reading = readings[i + 1]
+        car = current_reading.car
+        if not car:
+            return
 
-            if current_reading.end_odometer and next_reading.start_odometer:
-                no_goal_mileage = abs(current_reading.end_odometer - next_reading.start_odometer)
-                current_reading.no_goal_mileage = no_goal_mileage
-                current_reading.save()
+        previous_requests = Request.objects(
+            driver=current_request.driver,
+            id__ne=current_request.id,
+            date__lte=current_request.date
+        ).order_by('-date', '-id')
+
+        for req in previous_requests:
+            reading = cls.objects(request=req).first()
+            if reading and reading.car == car and reading.end_odometer is not None and reading.no_goal_mileage is None:
+                no_goal_mileage = abs(current_reading.start_odometer - reading.end_odometer)
+                reading.no_goal_mileage = no_goal_mileage
+                reading.save()
+                return
