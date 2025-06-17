@@ -338,6 +338,7 @@ class ExportExcelAPIView(APIView):
                 car_info = cu.car.name if cu and hasattr(cu.car, "name") else "Нет машины"
 
                 row = {
+                    "ID пользователя": str(req.user.id) if req.user else "—",
                     "Имя пользователя": req.user.name if req.user else "—",
                     "Имя водителя": driver_name,
                     "Статус": STATUS_TRANSLATION.get(req.status, "Неизвестно"),
@@ -427,6 +428,7 @@ class DownloadUserActivityReport(APIView):
                             total_time += duration
 
             data.append({
+                "ID пользователя": user.id ,
                 "Имя пользователя": user.name or user.email,
                 "Подразделение": user.subdepartment or "",
                 "Создано заявок": requests.count(),
@@ -451,3 +453,72 @@ class DownloadUserActivityReport(APIView):
         response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = 'attachment; filename="user_activity_report.xlsx"'
         return response
+    
+
+class DriverLoadReportExcel(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Экспорт отчёта о загруженности водителей",
+        responses={200: "Excel-файл"}
+    )
+    def get(self, request):
+        report = defaultdict(lambda: {
+            "Кол-во поездок": 0,
+            "Кол-во рабочих часов": timedelta(),
+            "Общий пробег": 0.0,
+            "Пробег без пассажира": 0.0,
+            "Кол-во отклонённых заявок": 0
+        })
+
+        requests = Request.objects.select_related()
+        for req in requests:
+            if not req.driver:
+                continue
+            driver_name = req.driver.name
+
+            if req.status == 1: 
+                report[driver_name]["Кол-во поездок"] += 1
+                for route in req.routes:
+                    if route.start_time and route.end_time:
+                        report[driver_name]["Кол-во рабочих часов"] += (route.end_time - route.start_time)
+            elif req.status == 2:
+                report[driver_name]["Кол-во отклонённых заявок"] += 1
+
+        odometers = OdometerReading.objects.select_related()
+        for od in odometers:
+            if not od.driver:
+                continue
+            driver_name = od.driver.name
+            if od.start_odometer is not None and od.end_odometer is not None:
+                report[driver_name]["Общий пробег"] += abs(od.end_odometer - od.start_odometer)
+            if od.no_goal_mileage is not None:
+                report[driver_name]["Пробег без пассажира"] += od.no_goal_mileage
+
+        rows = []
+        for driver, stats in report.items():
+            trips = stats["Кол-во поездок"]
+            total_km = stats["Общий пробег"]
+            avg_distance = total_km / trips if trips else 0
+            working_hours = round(stats["Кол-во рабочих часов"].total_seconds() / 3600, 2)
+
+            rows.append({
+                "Имя водителя": driver,
+                **stats,
+                "Среднее расстояние на поездку": round(avg_distance, 2),
+                "Кол-во рабочих часов": working_hours,
+            })
+
+        df = pd.DataFrame(rows)
+
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name="Загруженность")
+            sheet = writer.sheets["Загруженность"]
+            for i, column in enumerate(df.columns, 1):
+                max_len = max(df[column].astype(str).map(len).max(), len(str(column))) + 2
+                sheet.column_dimensions[get_column_letter(i)].width = max_len
+
+        output.seek(0)
+        filename = f"Загруженность_водителей_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.xlsx"
+        return FileResponse(output, as_attachment=True, filename=filename)
