@@ -6,28 +6,48 @@ from django.contrib.auth.hashers import make_password
 from bson import ObjectId
 from django.contrib.auth.hashers import check_password
 from core_requests.serializers import *
-
+from rest_framework import serializers
+from bson import ObjectId
+from authorization.models import User
 
 class CarSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
+    id_car = serializers.IntegerField(read_only=True)  
     name = serializers.CharField(required=False, allow_blank=True)
     car_type = serializers.CharField(required=False, allow_blank=True)
     number = serializers.CharField(required=False, allow_blank=True)
-
-    # user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    # status = serializers.IntegerField(required=False, allow_null=True)
+    main_driver = serializers.CharField(required=True, allow_blank=True)
 
     def create(self, validated_data):
-        return Car.objects.create(**validated_data)
+        main_driver_id = validated_data.pop('main_driver', None)
+        main_driver = None
+
+        if main_driver_id:
+            try:
+                main_driver = User.objects.get(id=ObjectId(main_driver_id))
+            except User.DoesNotExist:
+                raise serializers.ValidationError("Главный водитель с таким ID не найден")
+        id_car = get_next_sequence('id_car')
+
+        car = Car.objects.create(id_car=id_car, main_driver=main_driver, **validated_data)
+        return car
 
     def update(self, instance, validated_data):
         instance.name = validated_data.get('name', instance.name)
         instance.car_type = validated_data.get('car_type', instance.car_type)
         instance.number = validated_data.get('number', instance.number)
-        # instance.user = validated_data.get('user', instance.user)
-        # instance.status = validated_data.get('status', instance.status)
+
+        main_driver_id = validated_data.get('main_driver')
+        if main_driver_id:
+            try:
+                main_driver = User.objects.get(id=ObjectId(main_driver_id))
+                instance.main_driver = main_driver
+            except User.DoesNotExist:
+                raise serializers.ValidationError("Главный водитель с таким ID не найден")
+
         instance.save()
         return instance
+
 
 
 class LocationSerializer(serializers.Serializer):
