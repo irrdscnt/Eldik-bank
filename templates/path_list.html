@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,7 +14,6 @@
       background-color: #f5f5f5;
       font-family: Arial, sans-serif;
     }
-
     .page-a4 {
       width: 210mm;
       min-height: 297mm;
@@ -25,36 +23,30 @@
       box-sizing: border-box;
       margin-bottom: 10mm;
     }
-
     .header {
       display: flex;
       justify-content: space-between;
       margin-bottom: 10px;
       font-size: 0.8em;
     }
-
     .organization {
       margin-bottom: 15px;
       font-size: 0.8em;
     }
-
     h3 {
       text-align: center;
       margin: 15px 0;
     }
-
     .main-content {
       display: flex;
       justify-content: space-between;
       position: relative;
     }
-
     .left-column,
     .right-column {
       width: 48%;
       padding: 0 5px;
     }
-
     .left-column::after {
       content: "";
       position: absolute;
@@ -63,59 +55,49 @@
       left: 50%;
       border-right: 1px solid #000;
     }
-
     .section-block {
       margin-bottom: 15px;
       padding-bottom: 10px;
       border-bottom: 1px dashed #000;
     }
-
     .section-block:last-child {
       border-bottom: none;
     }
-
     .divider {
       border-top: 1px solid #000;
       margin: 5px 0;
     }
-
     .okud-code {
       border: 1px solid black;
       padding: 0 3px;
       display: inline-block;
       font-family: monospace;
     }
-
     .org-name {
       font-size: 1.2em;
       margin-left: 50px;
     }
-
     .org-details {
       font-size: 0.8em;
       margin-left: 100px;
       margin-top: -5px;
       margin-bottom: 2px;
     }
-
     .org-contacts {
       font-size: 0.8em;
       margin-left: 100px;
       margin-top: 0;
     }
-
     .car-info-row {
       display: flex;
       align-items: center;
       margin-bottom: 10px;
       gap: 5px;
     }
-
     .label-col {
       flex: 1;
       font-size: 0.8em;
     }
-
     .value-col {
       flex: 2;
       font-size: 1em;
@@ -124,74 +106,61 @@
       border-bottom: 1px solid black;
       display: inline-block;
     }
-
     .input-col {
       flex: 1;
       border: 1px solid #000;
       padding: 5px;
       min-height: 20px;
     }
-
     .right-label {
       flex: 1;
       text-align: right;
       font-size: 0.8em;
     }
-
     .time-block {
       display: flex;
       align-items: flex-start;
       margin-bottom: 10px;
     }
-
     .time-input {
       width: 100px;
       border: 1px solid #000;
       min-height: 40px;
       margin-left: 10px;
     }
-
     .fuel-container {
       display: flex;
       align-items: flex-start;
       gap: 15px;
       margin-bottom: 15px;
     }
-
     .fuel-table {
       flex: 1;
       border-collapse: collapse;
     }
-
     .fuel-table td {
       border: 1px solid #000;
       padding: 5px;
-      font-size: 0.8em;
     }
-
     .fuel-row {
       display: flex;
       align-items: center;
       margin-bottom: 5px;
     }
-
     .fuel-label {
       margin: 0;
       width: 100px;
       font-size: 0.9em;
     }
-
     .fuel-input {
       border: 1px solid #000;
       height: 20px;
       flex: 1;
     }
-
     .fuel-title {
       font-size: 0.9em;
       font-weight: bold;
     }
-
     .quantity-box {
       display: flex;
       align-items: center;
@@ -200,42 +169,35 @@
       height: 20px;
       flex: 1;
     }
-
     .odometer-acceptance {
       display: flex;
       align-items: center;
       margin-bottom: 10px;
       max-width: 100%;
     }
-
     .odometer-text {
       margin: 0;
       width: 60%;
     }
-
     .odometer-input {
       border: 1px solid #000;
       height: 20px;
       width: 40%;
       min-width: 100px;
     }
-
     .underline-text {
       padding-bottom: 3px;
       border-bottom: 1px solid black;
       display: inline-block;
     }
-
     .distribution-block {
       margin-bottom: 15px;
     }
-
     .distribution-row {
       display: flex;
       align-items: baseline;
       gap: 5px;
     }
-
     .bank-name {
       font-size: 1em;
       margin: 0 0 2px 0;
@@ -243,38 +205,31 @@
       border-bottom: 1px solid black;
       display: inline-block;
     }
-
     .organization-note {
       font-size: 0.8em;
       margin: 0;
       font-style: italic;
     }
-
     table {
       width: 100%;
       border-collapse: collapse;
       margin-bottom: 20px;
       table-layout: fixed;
     }
-
-    table,
-    th,
-    td {
+    table, th, td {
       border: 1px solid black;
     }
-
-    th,
-    td {
+    th, td {
       padding: 8px;
       text-align: center;
       word-wrap: break-word;
-    }
+      font-size: 11px;
 
+    }
     .header {
       text-align: center;
       margin-bottom: 20px;
     }
-
     .signature {
       margin-top: 30px;
       width: 100%;
@@ -282,58 +237,49 @@
       justify-content: space-between;
       align-items: center;
     }
-
     .signature-line {
       display: inline-block;
       width: 200px;
       border-bottom: 1px solid black;
       margin: 0 10px;
     }
-
     .sizeText {
       font-size: 0.6em;
     }
-
     .main-content.no-divider .left-column::after {
       display: none;
     }
-
     .info-row {
       display: flex;
       align-items: center;
       margin-bottom: 10px;
     }
-
     .input-box {
       width: 40%;
       height: 20px;
       border: 1px solid #000;
       margin-left: 10px;
     }
-
     .signature-block {
       margin-top: 10px;
       width: 100%;
     }
-
     .signature-labels {
       display: flex;
       font-size: 0.8em;
     }
   </style>
 </head>
-
 <body>
   <div class="page-a4">
     <div class="header">
       <div>МЕСТО ДЛЯ ШТАМПА</div>
-      <div>Типовая междуведомственная форма №3<br>Код по ОКУД <span class="okud-code">0305003 3</span></div>
+      <div>Типовая междуведомственная форма №3<br>Код по ОКУД <span class="okud-code">0305003 3</span><br>№ {{ doc_number }}</div>
     </div>
 
     <div class="organization">
       <p style="margin-bottom: 5px;">
         Организация:
-        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
         <span class="underline-text" style="font-size: 1.2em;">ОАО "Элдик Банк"</span>
       </p>
       <p class="org-details">
@@ -345,8 +291,8 @@
       </p>
     </div>
 
-    <h3>ПУТЕВОЙ ЛИСТ ЛЕГКОВОГО АВТОМОБИЛЯ №6</h3>
-    <h3 style="text-align: center; text-decoration: underline;">с "01" 06 по "30" 06 2025 г.</h3>
+    <h3>ПУТЕВОЙ ЛИСТ ЛЕГКОВОГО АВТОМОБИЛЯ №{{ car.id_car }}</h3>
+    <h3 style="text-align: center; text-decoration: underline;">с "{{ from_date }}" {{ month }} по "{{ to_date }}" {{ month }} {{ year }} г.</h3>
 
     <div class="main-content">
       <div class="left-column">
@@ -355,7 +301,7 @@
             <p>Марка автомобиля</p>
           </div>
           <div class="value-col">
-            Тойота Камри
+            {{ car.name }}
           </div>
           <div class="input-col"></div>
         </div>
@@ -365,7 +311,7 @@
             <p>Номерной знак</p>
           </div>
           <div class="value-col">
-            01 KG 849
+            {{ car.number }}
           </div>
           <div class="right-label">
             <p><em>Гаражный №</em></p>
@@ -378,7 +324,7 @@
             <p>Водитель</p>
           </div>
           <div class="value-col">
-            Байсабаев
+            {{ car.main_driver.name|default:"" }}
           </div>
           <div class="right-label">
             <p><em>Табельный №</em></p>
@@ -388,14 +334,16 @@
 
         <div style="text-align: center; font-size: 0.8em;">
           <p style="font-weight: bold;">Задание водителю</p>
-          <p>см. Ашималиев</p>
+          {% for driver in drivers %}
+          <p>см. {{ driver.name }}</p>
+          {% endfor %}
         </div>
 
         <div class="distribution-block">
           <div class="distribution-row">
             <p style="margin: 0; font-size: 0.8em;">В распоряжение</p>
             <div>
-              <p class="bank-name">  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ОАО "Элдик Банк"</p>
+              <p class="bank-name">ОАО "Элдик Банк"</p>
               <p class="organization-note">наименование организации</p>
             </div>
           </div>
@@ -454,8 +402,7 @@
         </div>
 
         <div>
-          <p style="margin: 0 0 10px 0; font-size: 0.8em;">Автомобиль в технически исправном состоянии принял
-          </p>
+          <p style="margin: 0 0 10px 0; font-size: 0.8em;">Автомобиль в технически исправном состоянии принял</p>
           <p style="font-weight: bold; font-size: 1em;">Водитель</p>
         </div>
 
@@ -536,9 +483,6 @@
     </div>
   </div>
 
-
-
-
   <div class="page-a4">
     <table>
       <thead>
@@ -564,18 +508,20 @@
         </tr>
       </thead>
       <tbody>
+        {% for trip in trips %}
         <tr>
+          <td>{{ trip.route_id }}</td>
           <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
+          <td>{{ trip.departure }}</td>
+          <td>{{ trip.destination }}</td>
+          <td>{{ trip.start_hour }}</td>
+          <td>{{ trip.start_minute }}</td>
+          <td>{{ trip.end_hour }}</td>
+          <td>{{ trip.end_minute }}</td>
+          <td>{{ trip.mileage }}</td>
           <td></td>
         </tr>
+        {% endfor %}
       </tbody>
     </table>
 
@@ -623,8 +569,6 @@
         <p style="margin: 5px 0;">(расшифровка подписи)</p>
       </div>
     </div>
-
   </div>
 </body>
-
 </html>
