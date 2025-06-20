@@ -1505,3 +1505,40 @@ class RouteTimeUpdate(APIView):
         self.send_time_notification(request_obj, routes, action)
         serializer = RouteSerializer(routes)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class UserTripHistoryAPIView(APIView):
+    def get(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+        except DoesNotExist:
+            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.role == Role.DRIVER:
+            requests = Request.objects(driver=user, status=1)  
+        else:
+            requests = Request.objects(user=user, status=1)  
+        print(f"Found {requests.count()} requests for user {user_id} with status=1")
+
+        routes = []
+        now = datetime.utcnow()
+
+        for req in requests:
+
+            for route in req.routes:
+
+                if route.travel_date and route.travel_date < now:
+                    routes.append({
+                        "id": str(route.id),
+                        "goal": route.goal,
+                        "departure": route.departure,
+                        "destination": route.destination,
+                        "departure_coordinates": route.departure_coordinates,
+                        "destination_coordinates": route.destination_coordinates,
+                        "time": route.time,
+                        "start_time": route.start_time.isoformat() if route.start_time else None,
+                        "end_time": route.end_time.isoformat() if route.end_time else None,
+                        "travel_date": route.travel_date.isoformat() if route.travel_date else None,
+                        "transport_type": route.transport_type,
+                    })
+
+        return Response({"routes": routes})

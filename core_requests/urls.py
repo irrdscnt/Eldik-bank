@@ -17,6 +17,8 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path('historyroutes/<user_id>/', UserTripHistoryAPIView.as_view(), name='user-trip-history'),
+
     path('fast-requests/', FastRequestListView.as_view(), name='fast-request-list'),
     path('save-fcm-token/', SaveFCMTokenView.as_view(), name='save-fcm-token'),
 
@@ -36,4 +38,6 @@ urlpatterns = [
     path('requests/create/', RequestCreateView.as_view(), name='request-create'),
     path('requests/<str:pk>/', RequestDetail.as_view(), name='request-detail'),
     path('requests/<str:request_id>/routes/<str:route_id>/time', RouteTimeUpdate.as_view(), name='route-time-update'),
+
+
 ]
