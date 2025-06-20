@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 
 from mongoengine import Document, ReferenceField, StringField, DateTimeField
 from authorization.models import *
-
+from enum import IntEnum
 import random
 import string
 from mongoengine import *
+
 
 
 class Car(Document):
@@ -38,14 +39,20 @@ class Location(EmbeddedDocument):
     latitude = StringField()
     longitude = StringField()
 
+class AssignmentStatus(IntEnum):
+    UNASSIGNED = 0
+    ASSIGNED = 1
+
 
 class Car_user(Document):
     user = ReferenceField(User, reverse_delete_rule=2)
     car = ReferenceField(Car, reverse_delete_rule=2)
     status = IntField(null=True)
     location_history = ListField(EmbeddedDocumentField(Location))
-    created_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
 
+    assignment_status = IntField(default=AssignmentStatus.ASSIGNED.value)  
+    created_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
+    
     def __str__(self):
         return self.status
 
