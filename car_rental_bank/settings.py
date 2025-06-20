@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'django_filters',
     'corsheaders',
     'drf_yasg',
+    'reportList',
     'channels',
     'authorization',
     'core_requests',
@@ -152,6 +153,12 @@ connect(
     db=config('MONGO_DB_NAME'),
     host=config('MONGO_DB_URI')
 )
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.dummy',
+    }
+}
 # Password validation
 # https://docs.djangoproject.com/en/3.2/ref/settings/#auth-password-validators
 

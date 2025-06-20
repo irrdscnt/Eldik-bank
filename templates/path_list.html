@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Путевой лист легкового автомобиля</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: #f5f5f5;
+      font-family: Arial, sans-serif;
+    }
+
+    .page-a4 {
+      width: 210mm;
+      min-height: 297mm;
+      background: white;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+      padding: 5mm;
+      box-sizing: border-box;
+      margin-bottom: 10mm;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 0.8em;
+    }
+
+    .organization {
+      margin-bottom: 15px;
+      font-size: 0.8em;
+    }
+
+    h3 {
+      text-align: center;
+      margin: 15px 0;
+    }
+
+    .main-content {
+      display: flex;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    .left-column,
+    .right-column {
+      width: 48%;
+      padding: 0 5px;
+    }
+
+    .left-column::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      border-right: 1px solid #000;
+    }
+
+    .section-block {
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px dashed #000;
+    }
+
+    .section-block:last-child {
+      border-bottom: none;
+    }
+
+    .divider {
+      border-top: 1px solid #000;
+      margin: 5px 0;
+    }
+
+    .okud-code {
+      border: 1px solid black;
+      padding: 0 3px;
+      display: inline-block;
+      font-family: monospace;
+    }
+
+    .org-name {
+      font-size: 1.2em;
+      margin-left: 50px;
+    }
+
+    .org-details {
+      font-size: 0.8em;
+      margin-left: 100px;
+      margin-top: -5px;
+      margin-bottom: 2px;
+    }
+
+    .org-contacts {
+      font-size: 0.8em;
+      margin-left: 100px;
+      margin-top: 0;
+    }
+
+    .car-info-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 5px;
+    }
+
+    .label-col {
+      flex: 1;
+      font-size: 0.8em;
+    }
+
+    .value-col {
+      flex: 2;
+      font-size: 1em;
+      font-weight: bold;
+      padding-bottom: 3px;
+      border-bottom: 1px solid black;
+      display: inline-block;
+    }
+
+    .input-col {
+      flex: 1;
+      border: 1px solid #000;
+      padding: 5px;
+      min-height: 20px;
+    }
+
+    .right-label {
+      flex: 1;
+      text-align: right;
+      font-size: 0.8em;
+    }
+
+    .time-block {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
+    .time-input {
+      width: 100px;
+      border: 1px solid #000;
+      min-height: 40px;
+      margin-left: 10px;
+    }
+
+    .fuel-container {
+      display: flex;
+      align-items: flex-start;
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+
+    .fuel-table {
+      flex: 1;
+      border-collapse: collapse;
+    }
+
+    .fuel-table td {
+      border: 1px solid #000;
+      padding: 5px;
+      font-size: 0.8em;
+    }
+
+    .fuel-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+
+    .fuel-label {
+      margin: 0;
+      width: 100px;
+      font-size: 0.9em;
+    }
+
+    .fuel-input {
+      border: 1px solid #000;
+      height: 20px;
+      flex: 1;
+    }
+
+    .fuel-title {
+      font-size: 0.9em;
+      font-weight: bold;
+    }
+
+    .quantity-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #000;
+      height: 20px;
+      flex: 1;
+    }
+
+    .odometer-acceptance {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      max-width: 100%;
+    }
+
+    .odometer-text {
+      margin: 0;
+      width: 60%;
+    }
+
+    .odometer-input {
+      border: 1px solid #000;
+      height: 20px;
+      width: 40%;
+      min-width: 100px;
+    }
+
+    .underline-text {
+      padding-bottom: 3px;
+      border-bottom: 1px solid black;
+      display: inline-block;
+    }
+
+    .distribution-block {
+      margin-bottom: 15px;
+    }
+
+    .distribution-row {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+    }
+
+    .bank-name {
+      font-size: 1em;
+      margin: 0 0 2px 0;
+      padding-bottom: 3px;
+      border-bottom: 1px solid black;
+      display: inline-block;
+    }
+
+    .organization-note {
+      font-size: 0.8em;
+      margin: 0;
+      font-style: italic;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      table-layout: fixed;
+    }
+
+    table,
+    th,
+    td {
+      border: 1px solid black;
+    }
+
+    th,
+    td {
+      padding: 8px;
+      text-align: center;
+      word-wrap: break-word;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .signature {
+      margin-top: 30px;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .signature-line {
+      display: inline-block;
+      width: 200px;
+      border-bottom: 1px solid black;
+      margin: 0 10px;
+    }
+
+    .sizeText {
+      font-size: 0.6em;
+    }
+
+    .main-content.no-divider .left-column::after {
+      display: none;
+    }
+
+    .info-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .input-box {
+      width: 40%;
+      height: 20px;
+      border: 1px solid #000;
+      margin-left: 10px;
+    }
+
+    .signature-block {
+      margin-top: 10px;
+      width: 100%;
+    }
+
+    .signature-labels {
+      display: flex;
+      font-size: 0.8em;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page-a4">
+    <div class="header">
+      <div>МЕСТО ДЛЯ ШТАМПА</div>
+      <div>Типовая междуведомственная форма №3<br>Код по ОКУД <span class="okud-code">0305003 3</span></div>
+    </div>
+
+    <div class="organization">
+      <p style="margin-bottom: 5px;">
+        Организация:
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span class="underline-text" style="font-size: 1.2em;">ОАО "Элдик Банк"</span>
+      </p>
+      <p class="org-details">
+        <em>полное наименование</em>
+      </p>
+      <span>_________________________________________</span>
+      <p class="org-contacts">
+        <em>адрес, телефон</em>
+      </p>
+    </div>
+
+    <h3>ПУТЕВОЙ ЛИСТ ЛЕГКОВОГО АВТОМОБИЛЯ №6</h3>
+    <h3 style="text-align: center; text-decoration: underline;">с "01" 06 по "30" 06 2025 г.</h3>
+
+    <div class="main-content">
+      <div class="left-column">
+        <div class="car-info-row">
+          <div class="label-col">
+            <p>Марка автомобиля</p>
+          </div>
+          <div class="value-col">
+            Тойота Камри
+          </div>
+          <div class="input-col"></div>
+        </div>
+
+        <div class="car-info-row">
+          <div class="label-col">
+            <p>Номерной знак</p>
+          </div>
+          <div class="value-col">
+            01 KG 849
+          </div>
+          <div class="right-label">
+            <p><em>Гаражный №</em></p>
+          </div>
+          <div class="input-col"></div>
+        </div>
+
+        <div class="car-info-row">
+          <div class="label-col">
+            <p>Водитель</p>
+          </div>
+          <div class="value-col">
+            Байсабаев
+          </div>
+          <div class="right-label">
+            <p><em>Табельный №</em></p>
+          </div>
+          <div class="input-col"></div>
+        </div>
+
+        <div style="text-align: center; font-size: 0.8em;">
+          <p style="font-weight: bold;">Задание водителю</p>
+          <p>см. Ашималиев</p>
+        </div>
+
+        <div class="distribution-block">
+          <div class="distribution-row">
+            <p style="margin: 0; font-size: 0.8em;">В распоряжение</p>
+            <div>
+              <p class="bank-name">  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ОАО "Элдик Банк"</p>
+              <p class="organization-note">наименование организации</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="car-info-row">
+          <div class="label-col">
+            <p>Адрес подачи:</p>
+          </div>
+          <div class="value-col">
+            по Кыргызстану
+          </div>
+        </div>
+
+        <div class="time-block">
+          <div style="flex: 1;">
+            <p style="margin: 0 0 5px 0; font-size: 0.8em;">Время выезда из гаража, час, мин</p>
+            <p style="margin: 0; font-size: 0.9em; font-weight: bold;">Диспечер-нарядчик</p>
+          </div>
+          <div class="time-input"></div>
+        </div>
+
+        <div class="time-block">
+          <div style="flex: 1;">
+            <p style="margin: 0 0 5px 0; font-size: 0.8em;">Время возвращения в гараж, час, мин</p>
+            <p style="margin: 0; font-size: 0.9em; font-weight: bold;">Диспечер-нарядчик</p>
+          </div>
+          <div class="time-input"></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div style="font-size: 0.8em;">
+          <p>Опоздания, простои в пути, заезды в гараж и прочие отметки</p>
+          <span style="margin-bottom: 5px">____________________________________________</span>
+          <span style="margin-bottom: 5px">____________________________________________</span>
+          <span style="margin-bottom: 5px">____________________________________________</span>
+          <span style="margin-bottom: 5px">____________________________________________</span>
+        </div>
+
+        <div>
+          <h5>Автомобиль сдал водитель</h5>
+          <h5>М. П.</h5>
+        </div>
+      </div>
+
+      <div class="right-column">
+        <div style="margin-bottom: 10px;">
+          <p style="margin: 0 0 10px 0; font-size: 0.8em;">Автомобиль технически исправен</p>
+          <div class="car-info-row">
+            <p style="margin: 0; font-size: 0.8em;">Показания одометра, км</p>
+            <div class="input-col" style="width: 100px; height: 25px;"></div>
+          </div>
+          <p style="margin: 0 0 10px 0; font-size: 0.9em;">Выезд разрешаю <strong>Механик</strong></p>
+          <div class="divider"></div>
+        </div>
+
+        <div>
+          <p style="margin: 0 0 10px 0; font-size: 0.8em;">Автомобиль в технически исправном состоянии принял
+          </p>
+          <p style="font-weight: bold; font-size: 1em;">Водитель</p>
+        </div>
+
+        <div class="fuel-container">
+          <p class="fuel-label">Гоpючее</p>
+          <table class="fuel-table">
+            <tr>
+              <td>марка</td>
+              <td>норма расхода</td>
+            </tr>
+            <tr>
+              <td>АИ95</td>
+              <td></td>
+            </tr>
+          </table>
+        </div>
+
+        <div>
+          <p class="underline-text" style="font-size: 0.8em;">Движение горючего</p>
+
+          <div style="font-size: 0.8em;">
+            <div class="fuel-row">
+              <p class="fuel-title fuel-label">Выдано:</p>
+              <div class="quantity-box">количество л, кг</div>
+            </div>
+
+            <div class="fuel-row">
+              <p class="fuel-label">по заправочному листу №</p>
+              <div class="fuel-input"></div>
+            </div>
+
+            <div class="fuel-row">
+              <p class="fuel-label">за наличный расчет</p>
+              <div class="fuel-input"></div>
+            </div>
+
+            <div class="fuel-row">
+              <p class="fuel-label">Остаток при выезде</p>
+              <div class="fuel-input"></div>
+            </div>
+
+            <div class="fuel-row">
+              <p class="fuel-label">при возвращении</p>
+              <div class="fuel-input"></div>
+            </div>
+
+            <div class="fuel-row">
+              <p class="fuel-label">Расход по норме</p>
+              <div class="fuel-input"></div>
+            </div>
+
+            <div class="fuel-row">
+              <p class="fuel-label">фактический</p>
+              <div class="fuel-input"></div>
+            </div>
+
+            <div class="fuel-row">
+              <p class="fuel-label">Экономия</p>
+              <div class="fuel-input"></div>
+            </div>
+
+            <div class="fuel-row">
+              <p class="fuel-label">Перерасход</p>
+              <div class="fuel-input"></div>
+            </div>
+
+            <div class="odometer-acceptance">
+              <p class="odometer-text">
+                <strong>Автомобиль принял.</strong><br>
+                Показания одометра при возвращении в гараж, км
+              </p>
+              <div class="odometer-input"></div>
+            </div>
+            <p style="font-size: 1.2em; font-weight: bold;">Механик</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+
+
+  <div class="page-a4">
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="3" class="sizeText" style="width: 4% ">№ поездки</th>
+          <th rowspan="3" class="sizeText" style="width: 6%">Код заказчика</th>
+          <th colspan="2" class="sizeText" style="width: 28%">Место</th>
+          <th colspan="4" class="sizeText" style="width: 20%">Время</th>
+          <th rowspan="3" class="sizeText" style="width: 6%">Пройдено, км</th>
+          <th rowspan="3" class="sizeText" style="width: 5%">Подпись лица, пользовавшегося автомобилем</th>
+        </tr>
+        <tr>
+          <th rowspan="2" class="sizeText" style="width: 10%">отправление</th>
+          <th rowspan="2" class="sizeText" style="width: 10%">назначение</th>
+          <th colspan="2" class="sizeText" style="width: 10%">выезд</th>
+          <th colspan="2" class="sizeText" style="width: 10%">возвращение</th>
+        </tr>
+        <tr>
+          <th class="sizeText" style="width: 8%">ч.</th>
+          <th class="sizeText" style="width: 8%">мин.</th>
+          <th class="sizeText" style="width: 8%">ч.</th>
+          <th class="sizeText" style="width: 8%">мин.</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="main-content no-divider">
+      <div class="left-column">
+        <div class="info-row">
+          <p style="margin: 0; width: 60%;">Результат работы автомобиля за сме</p>
+        </div>
+        <div class="info-row">
+          <p style="margin: 0; width: 60%;">всего в наряде, час</p>
+          <div class="input-box"></div>
+        </div>
+        <div class="info-row">
+          <p style="margin: 0; width: 60%;">пройдено, км</p>
+          <div class="input-box"></div>
+        </div>
+      </div>
+
+      <div class="right-column">
+        <p style="margin: 0 0 10px 0;">Расчет заработной платы:</p>
+        <div class="info-row">
+          <p style="margin: 0; width: 60%;">за километраж, сом. тый.</p>
+          <div class="input-box"></div>
+        </div>
+        <div class="info-row">
+          <p style="margin: 0; width: 60%;">за часы, сом. тый.</p>
+          <div class="input-box"></div>
+        </div>
+        <div class="divider"></div>
+        <div class="info-row">
+          <p style="margin: 0; width: 60%;">Итого, сом. тый.</p>
+          <div class="input-box"></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <span>____________________</span>
+      <span>____________________</span>
+      <span>___________________________________</span>
+
+      <div class="signature-labels" style="margin-left: 70px;">
+        <p style="margin: 5px 0; margin-right: 100px;">(должность)</p>
+        <p style="margin: 5px 0; margin-right: 150px;">(подпись)</p>
+        <p style="margin: 5px 0;">(расшифровка подписи)</p>
+      </div>
+    </div>
+
+  </div>
+</body>
+
+</html>

@@ -1133,12 +1133,17 @@ class RequestDetail(APIView):
                             status=status.HTTP_403_FORBIDDEN)
 
         serializer = RequestSerializer(request_obj, data=request.data, partial=True, context={'request': request})
-        if serializer.is_valid():
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
             serializer.save()
             if 'status' in request.data:
                 self.send_status_notification(request_obj, request.data['status'])
             return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении заявки {pk}: {str(e)}")
+            return Response({"detail": "Failed to update request."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class FastRequestListView(APIView):
