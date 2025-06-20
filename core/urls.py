@@ -30,4 +30,5 @@ urlpatterns = [
 
     path('export-requests-excel/', ExportExcelAPIView.as_view(), name='export-requests-excel'),
     path('export-user-activity-excel/', DownloadUserActivityReport.as_view(), name='export-user-activity-excel'),
+    path('export-driver-load-excel/', DriverLoadReportExcel.as_view(), name='export-driver-load-excel'),
 ]
