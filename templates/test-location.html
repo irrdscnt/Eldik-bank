@@ -1,505 +1,145 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>Live Tracker with Route</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        #map { height: 500px; width: 100%; margin-top: 20px; }
-        body { font-family: sans-serif; padding: 20px; }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Live Location Tracker</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #formContainer {
+      position: absolute;
+      top: 20px; left: 20px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border: 1px solid #ccc;
+      box-shadow: 0 0 5px rgba(0,0,0,0.2);
+    }
+    #map { height: 100vh; }
+  </style>
 </head>
 <body>
-    <h2>🛰 Live Tracker with Movement Trail</h2>
-    <label>User ID: <input id="userId" type="text" value="user123"></label><br>
-    <label>Role:
-        <select id="role">
-            <option value="user">User</option>
-            <option value="driver">Driver</option>
-        </select>
-    </label><br>
-    <button onclick="startTracking()">▶️ Start Tracking</button>
-    <button onclick="stopTracking()">⏹ Stop</button>
-    <pre id="output"></pre>
-    <div id="map"></div>
 
-    <script>
-        const socket = new WebSocket("ws://localhost:8000/ws/location/");
-        const output = document.getElementById("output");
-
-        const map = L.map('map').setView([42.87, 74.61], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
-
-        const markers = {};
-        const paths = {};
-        const polylines = {};
-        let trackingInterval = null;
-
-        socket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                output.textContent += "\n📥 Получено: " + JSON.stringify(data);
-
-                const { user_id, coordinates, role, location_text } = data;
-                if (!Array.isArray(coordinates) || coordinates.length !== 2) return;
-
-                const lat = parseFloat(coordinates[0]);
-                const lng = parseFloat(coordinates[1]);
-                if (isNaN(lat) || isNaN(lng)) return;
-
-                const latestPos = [lat, lng];
-                if (!paths[user_id]) paths[user_id] = [];
-                paths[user_id].push(latestPos);
-
-                if (!markers[user_id]) {
-                    const icon = L.icon({
-                        iconUrl: role === 'driver'
-                            ? 'https://cdn-icons-png.flaticon.com/512/3448/3448449.png'
-                            : 'https://cdn-icons-png.flaticon.com/512/1077/1077012.png',
-                        iconSize: [30, 30],
-                        iconAnchor: [15, 15]
-                    });
-
-                    markers[user_id] = L.marker(latestPos, { icon }).addTo(map)
-                        .bindPopup(`${role}: ${user_id}`);
-                } else {
-                    markers[user_id].setLatLng(latestPos);
-                }
-
-                markers[user_id].bindTooltip(location_text || "", { permanent: false });
-
-                if (polylines[user_id]) {
-                    polylines[user_id].setLatLngs(paths[user_id]);
-                } else {
-                    polylines[user_id] = L.polyline(paths[user_id], {
-                        color: role === 'driver' ? 'blue' : 'green',
-                        weight: 3,
-                        opacity: 0.7
-                    }).addTo(map);
-                }
-
-                map.setView(latestPos, 15);
-            } catch (err) {
-                console.error("Ошибка обработки:", err);
-            }
-        };
-
-        async function sendLocation() {
-            if (!navigator.geolocation) {
-                output.textContent += "\n⚠️ Геолокация не поддерживается этим браузером.";
-                return;
-            }
-
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                try {
-                    const lat = pos.coords.latitude.toString();
-                    const lng = pos.coords.longitude.toString();
-
-                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
-                    const data = await response.json();
-                    const address = data.display_name || "Адрес не найден";
-
-                    const sendData = {
-                        user_id: document.getElementById("userId").value,
-                        role: document.getElementById("role").value,
-                        coordinates: [lat, lng],
-                        location_text: address
-                    };
-
-                    socket.send(JSON.stringify(sendData));
-                    output.textContent += "\n📤 Отправлено: " + JSON.stringify(sendData);
-                } catch (error) {
-                    output.textContent += "\n⚠️ Ошибка геокодирования или отправки: " + error;
-
-                    const fallbackData = {
-                        user_id: document.getElementById("userId").value,
-                        role: document.getElementById("role").value,
-                        coordinates: [pos.coords.latitude.toString(), pos.coords.longitude.toString()],
-                        location_text: "Адрес не найден"
-                    };
-                    socket.send(JSON.stringify(fallbackData));
-                    output.textContent += "\n📤 Отправлено с fallback: " + JSON.stringify(fallbackData);
-                }
-            }, (error) => {
-                output.textContent += "\n⚠️ Ошибка получения геопозиции: " + error.message;
-            });
-        }
-
-        function startTracking() {
-            if (!trackingInterval) {
-                sendLocation();
-                trackingInterval = setInterval(sendLocation, 1000); // 🔁 раз в секунду
-                output.textContent += "\n▶️ Отслеживание запущено\n";
-            }
-        }
-
-        function stopTracking() {
-            if (trackingInterval) {
-                clearInterval(trackingInterval);
-                trackingInterval = null;
-                output.textContent += "\n⏹ Отслеживание остановлено\n";
-            }
-        }
-    </script>
-</body>
-</html>
-
-
-
-
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Live Tracker with Route</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        #map { height: 500px; width: 100%; margin-top: 20px; }
-        body { font-family: sans-serif; padding: 20px; }
-    </style>
-</head>
-<body>
-    <h2>🛰 Live Tracker with Movement Trail</h2>
-    <label>User ID: <input id="userId" type="text" value="user123"></label><br>
-    <label>Role:
-        <select id="role">
-            <option value="user">User</option>
-            <option value="driver">Driver</option>
-        </select>
-    </label><br>
-    <button onclick="startTracking()">▶️ Start Tracking</button>
-    <button onclick="stopTracking()">⏹ Stop</button>
-    <pre id="output"></pre>
-    <div id="map"></div>
-
-    <script>
-        const socket = new WebSocket("ws://localhost:8000/ws/location/");
-        const output = document.getElementById("output");
-
-        const map = L.map('map').setView([42.87, 74.61], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
-
-        const markers = {};       // user_id => marker
-        const paths = {};         // user_id => array of [lat, lng]
-        const polylines = {};     // user_id => polyline
-        let trackingInterval = null;
-
-        socket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                output.textContent += "\n📥 Получено: " + JSON.stringify(data);
-
-                const { user_id, coordinates, role, location_text } = data;
-
-                if (!Array.isArray(coordinates) || coordinates.length !== 2) return;
-
-                const lat = parseFloat(coordinates[0]);
-                const lng = parseFloat(coordinates[1]);
-                if (isNaN(lat) || isNaN(lng)) return;
-
-                const latestPos = [lat, lng];
-
-                // Добавляем точку в историю пути пользователя
-                if (!paths[user_id]) paths[user_id] = [];
-                paths[user_id].push(latestPos);
-
-                // === Обновляем или создаём маркер ===
-                if (!markers[user_id]) {
-                    const icon = L.icon({
-                        iconUrl: role === 'driver'
-                            ? 'https://cdn-icons-png.flaticon.com/512/3448/3448449.png'
-                            : 'https://cdn-icons-png.flaticon.com/512/1077/1077012.png',
-                        iconSize: [30, 30],
-                        iconAnchor: [15, 15]
-                    });
-
-                    markers[user_id] = L.marker(latestPos, { icon }).addTo(map)
-                        .bindPopup(`${role}: ${user_id}`);
-                } else {
-                    markers[user_id].setLatLng(latestPos);
-                }
-
-                markers[user_id].bindTooltip(location_text || "", { permanent: false });
-
-                // === Рисуем/обновляем линию маршрута ===
-                if (polylines[user_id]) {
-                    polylines[user_id].setLatLngs(paths[user_id]);
-                } else {
-                    polylines[user_id] = L.polyline(paths[user_id], {
-                        color: role === 'driver' ? 'blue' : 'green',
-                        weight: 3,
-                        opacity: 0.7
-                    }).addTo(map);
-                }
-
-                // === Центрируем карту на последнюю точку ===
-                map.setView(latestPos, 15);
-
-            } catch (err) {
-                console.error("Ошибка обработки:", err);
-            }
-        };
-
-            
-
-        // function sendLocation() {
-        //     if (!navigator.geolocation) return;
-
-        //     navigator.geolocation.getCurrentPosition((pos) => {
-        //         const lat = pos.coords.latitude.toString();
-        //         const lng = pos.coords.longitude.toString();
-
-        //         const data = {
-        //             user_id: document.getElementById("userId").value,
-        //             role: document.getElementById("role").value,
-        //             coordinates: [lat, lng],
-        //             location_text: "🛰 в движении"
-        //         };
-
-        //         socket.send(JSON.stringify(data));
-        //         output.textContent += "\n📤 Отправлено: " + JSON.stringify(data);
-        //     });
-        // }
-        function sendLocation() {
-        if (!navigator.geolocation) {
-            output.textContent += "\n⚠️ Геолокация не поддерживается этим браузером.";
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(async (pos) => {
-        try {
-            const lat = pos.coords.latitude.toString();
-            const lng = pos.coords.longitude.toString();
-
-            // Обратное геокодирование с помощью Nominatim
-            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
-            const data = await response.json();
-
-            const address = data.display_name || "Адрес не найден";
-
-            const sendData = {
-                user_id: document.getElementById("userId").value,
-                role: document.getElementById("role").value,
-                coordinates: [lat, lng],
-                location_text: address
-            };
-
-            socket.send(JSON.stringify(sendData));
-            output.textContent += "\n📤 Отправлено: " + JSON.stringify(sendData);
-
-        } catch (error) {
-            output.textContent += "\n⚠️ Ошибка геокодирования или отправки: " + error;
-            
-            // Отправим данные без адреса, если ошибка
-            const fallbackData = {
-                user_id: document.getElementById("userId").value,
-                role: document.getElementById("role").value,
-                coordinates: [pos.coords.latitude.toString(), pos.coords.longitude.toString()],
-                location_text: "Адрес не найден"
-            };
-            socket.send(JSON.stringify(fallbackData));
-            output.textContent += "\n📤 Отправлено с fallback: " + JSON.stringify(fallbackData);
-        }
-        }, (error) => {
-            output.textContent += "\n⚠️ Ошибка получения геопозиции: " + error.message;
-        });
-        }
-
-
-        let watchId = null;
-        function startTracking() {
-            if (watchId === null && navigator.geolocation) {
-                watchId = navigator.geolocation.watchPosition(
-                    async (pos) => {
-                        console.log("Точность: " + pos.coords.accuracy + " м");
-
-                        try {
-                            const lat = pos.coords.latitude.toString();
-                            const lng = pos.coords.longitude.toString();
-
-                            // Обратное геокодирование
-                            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
-                            const data = await response.json();
-                            const address = data.display_name || "Адрес не найден";
-
-                            const sendData = {
-                                user_id: document.getElementById("userId").value,
-                                role: document.getElementById("role").value,
-                                coordinates: [lat, lng],
-                                location_text: address
-                            };
-
-                            socket.send(JSON.stringify(sendData));
-                            output.textContent += "\n📤 Отправлено: " + JSON.stringify(sendData);
-                        } catch (error) {
-                            output.textContent += "\n⚠️ Ошибка геокодирования при трекинге: " + error;
-
-                            // fallback если ошибка
-                            const fallbackData = {
-                                user_id: document.getElementById("userId").value,
-                                role: document.getElementById("role").value,
-                                coordinates: [pos.coords.latitude.toString(), pos.coords.longitude.toString()],
-                                location_text: "Адрес не найден"
-                            };
-                            socket.send(JSON.stringify(fallbackData));
-                            output.textContent += "\n📤 Отправлено с fallback: " + JSON.stringify(fallbackData);
-                            
-                        }
-                    },
-                    (err) => {
-                        output.textContent += "\n⚠️ Ошибка геолокации: " + err.message;
-                    },
-                    {
-                        enableHighAccuracy: true,
-                        maximumAge: 0,
-                        timeout: 5000
-                    }
-                );
-                output.textContent += "\n▶️ Отслеживание запущено\n";
-            }
-        }
-
-        // function startTracking() {
-        //     if (watchId === null && navigator.geolocation) {
-        //         watchId = navigator.geolocation.watchPosition(
-        //             (pos) => {
-        //                 const lat = pos.coords.latitude.toString();
-        //                 const lng = pos.coords.longitude.toString();
-
-        //                 const data = {
-        //                     user_id: document.getElementById("userId").value,
-        //                     role: document.getElementById("role").value,
-        //                     coordinates: [lat, lng],
-        //                     location_text: "🛰 в движении"
-        //                 };
-
-        //                 socket.send(JSON.stringify(data));
-        //                 output.textContent += "\n📤 Отправлено: " + JSON.stringify(data);
-        //             },
-        //             (err) => {
-        //                 console.error("Ошибка геолокации:", err);
-        //             },
-        //             {
-        //                 enableHighAccuracy: true,
-        //                 maximumAge: 1000,
-        //                 timeout: 5000
-        //             }
-        //         );
-        //         output.textContent += "\n▶️ Отслеживание запущено\n";
-        //     }
-        // }
-
-        function stopTracking() {
-            if (watchId !== null) {
-                navigator.geolocation.clearWatch(watchId);
-                watchId = null;
-                output.textContent += "\n⏹ Отслеживание остановлено\n";
-            }
-        }
-
-
-        // function startTracking() {
-        //     if (!trackingInterval) {
-        //         sendLocation();
-        //         trackingInterval = setInterval(sendLocation, 2000);
-        //         output.textContent += "\n▶️ Отслеживание запущено\n";
-        //     }
-        // }
-
-        // function stopTracking() {
-        //     if (trackingInterval) {
-        //         clearInterval(trackingInterval);
-        //         trackingInterval = null;
-        //         output.textContent += "\n⏹ Отслеживание остановлено\n";
-        //     }
-        // }
-    </script>
-</body>
-</html> -->
-
-
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Location Tracker with Map</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        #map { height: 400px; width: 100%; margin-top: 20px; }
-    </style>
-</head>
-<body>
-<h2>Live Location on Map</h2>
-<label>User ID: <input id="userId" type="text"></label><br>
-<label>Role:
+<div id="formContainer">
+  <label>Role:
     <select id="role">
-        <option value="user">User</option>
-        <option value="driver">Driver</option>
+      <option value="user">User</option>
+      <option value="driver">Driver</option>
     </select>
-</label><br>
-<label>Latitude: <input id="lat" type="text" value="42.87"></label><br>
-<label>Longitude: <input id="lng" type="text" value="74.61"></label><br>
-<label>Location Description: <input id="location_text" type="text" placeholder="Введите описание"></label><br>
-<button onclick="sendLocation()">Send</button>
-<pre id="output"></pre>
+  </label><br><br>
+  <label>User ID: <input type="text" id="user_id" /></label><br><br>
+  <label>Driver ID: <input type="text" id="driver_id" /></label><br><br>
+  <button onclick="startTracking()">Старт</button>
+</div>
+
 <div id="map"></div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const socket = new WebSocket("ws://localhost:8000/ws/location/");
-const output = document.getElementById("output");
-const map = L.map('map').setView([42.87, 74.61], 13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
-}).addTo(map);
+  let ws, myMarker, otherMarker, map;
 
-let marker = null;
+  function redIcon() {
+    return new L.Icon({
+      iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-red.png",
+      shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+  }
 
-socket.onmessage = (event) => {
+  async function reverseGeocode(lat, lon) {
     try {
-        const data = JSON.parse(event.data);
-        output.textContent += "\nПолучено: " + JSON.stringify(data);
-
-        const coordinates = data.coordinates;
-
-        if (Array.isArray(coordinates) && coordinates.length === 2) {
-            const lat = Number(coordinates[0]);
-            const lng = Number(coordinates[1]);
-
-            if (!isNaN(lat) && !isNaN(lng)) {
-                if (!marker) {
-                    marker = L.marker([lat, lng]).addTo(map);
-                } else {
-                    marker.setLatLng([lat, lng]);
-                }
-                map.setView([lat, lng], 13); // Обновляем зум тоже
-            }
-        }
-    } catch (err) {
-        console.error("Ошибка при получении:", err);
+      const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      if (!resp.ok) throw new Error("Ошибка запроса");
+      const data = await resp.json();
+      return data.display_name || "Неизвестное место";
+    } catch {
+      return "Неизвестное место";
     }
-};
-    
-function sendLocation() {
-    const data = {
-        user_id: document.getElementById("userId").value,
-        role: document.getElementById("role").value,
-        coordinates: [
-            document.getElementById("lat").value.trim(), 
-            document.getElementById("lng").value.trim()  
-        ],
-        location_text: document.getElementById("location_text").value
+  }
+
+  function startTracking() {
+    const role = document.getElementById("role").value.trim();
+    const user_id = document.getElementById("user_id").value.trim();
+    const driver_id = document.getElementById("driver_id").value.trim();
+
+    if (!user_id || !driver_id) {
+      alert("Введите user_id и driver_id");
+      return;
+    }
+
+    document.getElementById("formContainer").style.display = "none";
+
+    map = L.map("map").setView([42.8746, 74.6122], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors"
+    }).addTo(map);
+
+    ws = new WebSocket(`ws://localhost:8000/ws/location/?user_id=${user_id}&driver_id=${driver_id}&role=${role}`);
+
+    ws.onopen = () => {
+      console.log("✅ WebSocket подключён");
+      sendLocation();
+      setInterval(sendLocation, 5000);
     };
 
-    socket.send(JSON.stringify(data));
-    output.textContent += "\nОтправлено: " + JSON.stringify(data);
-}
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      console.log("Получено сообщение WS:", data);
+      const coords = data.coordinates.map(Number);
+      if (String(data.user_id).trim() !== String(user_id).trim()) {
+        if (!otherMarker) {
+          otherMarker = L.marker(coords, {icon: redIcon()}).addTo(map).bindPopup(`${data.role}<br>${data.location_text}`);
+        } else {
+          otherMarker.setLatLng(coords);
+          otherMarker.getPopup().setContent(`${data.role}<br>${data.location_text}`);
+        }
 
+        if (myMarker && otherMarker) {
+          const group = new L.featureGroup([myMarker, otherMarker]);
+          map.fitBounds(group.getBounds().pad(0.5));
+        }
+      }
+    };
+
+    ws.onclose = () => alert("WebSocket закрыт");
+    ws.onerror = (e) => console.error("WebSocket ошибка:", e);
+
+    async function sendLocation() {
+      if (!navigator.geolocation) {
+        alert("Геолокация не поддерживается браузером");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(async pos => {
+        const coords = [pos.coords.latitude, pos.coords.longitude];
+        const location_text = await reverseGeocode(coords[0], coords[1]);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            user_id: user_id,
+            role: role,
+            coordinates: coords,
+            location_text: location_text
+          }));
+        }
+
+        if (!myMarker) {
+          myMarker = L.marker(coords).addTo(map).bindPopup("Вы<br>" + location_text).openPopup();
+          map.panTo(coords);
+        } else {
+          myMarker.setLatLng(coords);
+          myMarker.getPopup().setContent("Вы<br>" + location_text);
+        }
+      }, err => {
+        console.warn("Ошибка геолокации:", err.message);
+      });
+    }
+  }
 </script>
-     -->
+
+</body>
+</html>
