@@ -3,10 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Live Location Tracker</title>
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { margin: 0; padding: 0; height: 100%; }
     #formContainer {
@@ -24,14 +21,13 @@
 <body>
 
 <div id="formContainer">
-  <label>Role:
+  <label>Ваша роль:
     <select id="role">
       <option value="user">User</option>
       <option value="driver">Driver</option>
     </select>
   </label><br><br>
-  <label>User ID: <input type="text" id="user_id" /></label><br><br>
-  <label>Driver ID: <input type="text" id="driver_id" /></label><br><br>
+  <label>Ваш ID: <input type="text" id="user_id" /></label><br><br>
   <button onclick="startTracking()">Старт</button>
 </div>
 
@@ -41,6 +37,18 @@
 <script>
   let ws, myMarker, otherMarker, map;
 
+    async function getPairId(user_id, role) {
+        try {
+            const response = await fetch(`http://127.0.0.1:8000/api/get-pair/?user_id=${user_id}&role=${role}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error("Ошибка при получении пары:", error);
+            throw error;
+        }
+    }
   function redIcon() {
     return new L.Icon({
       iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-red.png",
@@ -63,13 +71,21 @@
     }
   }
 
-  function startTracking() {
+  async function startTracking() {
     const role = document.getElementById("role").value.trim();
     const user_id = document.getElementById("user_id").value.trim();
-    const driver_id = document.getElementById("driver_id").value.trim();
 
-    if (!user_id || !driver_id) {
-      alert("Введите user_id и driver_id");
+    if (!user_id) {
+      alert("Введите ваш user_id");
+      return;
+    }
+
+    const pair = await getPairId(user_id, role);
+    const driver_id = pair.driver_id;
+    const real_user_id = pair.user_id;
+
+    if (!driver_id || !real_user_id) {
+      alert("Не удалось получить вторую сторону пары");
       return;
     }
 
@@ -80,7 +96,7 @@
       attribution: "© OpenStreetMap contributors"
     }).addTo(map);
 
-    ws = new WebSocket(`ws://localhost:8000/ws/location/?user_id=${user_id}&driver_id=${driver_id}&role=${role}`);
+    ws = new WebSocket(`ws://127.0.0.1:8000/ws/location/?user_id=${user_id}&driver_id=${driver_id}&role=${role}`);
 
     ws.onopen = () => {
       console.log("✅ WebSocket подключён");
@@ -90,9 +106,8 @@
 
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      console.log("Получено сообщение WS:", data);
       const coords = data.coordinates.map(Number);
-      if (String(data.user_id).trim() !== String(user_id).trim()) {
+      if (data.user_id !== user_id) {
         if (!otherMarker) {
           otherMarker = L.marker(coords, {icon: redIcon()}).addTo(map).bindPopup(`${data.role}<br>${data.location_text}`);
         } else {
@@ -107,12 +122,9 @@
       }
     };
 
-    ws.onclose = () => alert("WebSocket закрыт");
-    ws.onerror = (e) => console.error("WebSocket ошибка:", e);
-
     async function sendLocation() {
       if (!navigator.geolocation) {
-        alert("Геолокация не поддерживается браузером");
+        alert("Геолокация не поддерживается");
         return;
       }
       navigator.geolocation.getCurrentPosition(async pos => {
@@ -134,8 +146,6 @@
           myMarker.setLatLng(coords);
           myMarker.getPopup().setContent("Вы<br>" + location_text);
         }
-      }, err => {
-        console.warn("Ошибка геолокации:", err.message);
       });
     }
   }

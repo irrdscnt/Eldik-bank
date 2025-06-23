@@ -6,6 +6,7 @@ from .views import *
 from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
+
 schema_view = get_schema_view(
     openapi.Info(
         title="Car Rental API",
@@ -18,6 +19,7 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('test-location/', test_location_view, name='test_location'),
+    path('get-pair/', GetPairAPIView.as_view(), name='get_pair'),
 
     path('report/', ReportView.as_view(), name='report'),
     path('report/csv/', ReportCSVDownloadView.as_view(), name='report-csv'),

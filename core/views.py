@@ -45,7 +45,9 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from core_requests.models import Request  
 from core_requests.models import Car, Car_user, Route, Trip
-
+from django.http import JsonResponse
+from authorization.models import User
+from bson import ObjectId
 
 def test_location_view(request):
     return render(request, 'test-location.html')
@@ -522,3 +524,80 @@ class DriverLoadReportExcel(APIView):
         output.seek(0)
         filename = f"Загруженность_водителей_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.xlsx"
         return FileResponse(output, as_attachment=True, filename=filename)
+
+
+# def get_pair(request):
+#     user_id = request.GET.get("user_id")
+#     role = request.GET.get("role")
+#     if not user_id or not role:
+#         return JsonResponse({"error": "user_id and role are required"}, status=400)
+
+#     try:
+#         if role == "user":
+#             req = Request.objects.get(user=ObjectId(user_id), status=0)
+#             return JsonResponse({"user_id": str(req.user.id), "driver_id": str(req.driver.id)})
+#         elif role == "driver":
+#             req = Request.objects.get(driver=ObjectId(user_id), status=0)
+#             return JsonResponse({"user_id": str(req.user.id), "driver_id": str(req.driver.id)})
+#         else:
+#             return JsonResponse({"error": "Invalid role"}, status=400)
+#     except Request.DoesNotExist:
+#         return JsonResponse({"error": "No active request found"}, status=404)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from bson import ObjectId
+from django.core.exceptions import ValidationError
+
+class GetPairAPIView(APIView):
+    def get(self, request):
+        try:
+            user_id = request.GET.get("user_id")
+            role = request.GET.get("role")
+
+            if not user_id or not role:
+                return Response(
+                    {"error": "user_id and role are required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Проверяем валидность ObjectId
+            try:
+                user_oid = ObjectId(user_id)
+            except:
+                return Response(
+                    {"error": "Invalid user_id format"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if role == "user":
+                req = Request.objects.get(user=user_oid, status=1)
+                response_data = {
+                    "user_id": str(req.user.id),
+                    "driver_id": str(req.driver.id)
+                }
+            elif role == "driver":
+                req = Request.objects.get(driver=user_oid, status=1)
+                response_data = {
+                    "user_id": str(req.user.id),
+                    "driver_id": str(req.driver.id)
+                }
+            else:
+                return Response(
+                    {"error": "Invalid role. Use 'user' or 'driver'"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            return Response(response_data)
+
+        except Request.DoesNotExist:
+            return Response(
+                {"error": "No active request found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
