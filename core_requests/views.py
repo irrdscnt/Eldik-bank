@@ -29,6 +29,7 @@ import pandas as pd
 from django.http import HttpResponse
 from core_requests.utils import *
 from collections import defaultdict
+from authorization.views import *
 
 
 class SaveFCMTokenView(APIView):
@@ -1505,8 +1506,53 @@ class RouteTimeUpdate(APIView):
         self.send_time_notification(request_obj, routes, action)
         serializer = RouteSerializer(routes)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
+
 class UserTripHistoryAPIView(APIView):
+    pagination_class = UnlimitedPagination
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'offset',
+                openapi.IN_QUERY,
+                description="Количество элементов для пропуска",
+                type=openapi.TYPE_INTEGER,
+                default=0
+            ),
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Количество элементов на странице",
+                type=openapi.TYPE_INTEGER,
+                default=10
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Список маршрутов с пагинацией",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                        'results': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'goal': openapi.Schema(type=openapi.TYPE_STRING),
+                                }
+                            )
+                        )
+                    }
+                )
+            ),
+            404: "Пользователь не найден"
+        }
+    )
     def get(self, request, user_id):
         try:
             user = User.objects.get(id=user_id)
@@ -1514,18 +1560,16 @@ class UserTripHistoryAPIView(APIView):
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
         if user.role == Role.DRIVER:
-            requests = Request.objects(driver=user, status=1)  
+            requests = Request.objects(driver=user, status=1)
         else:
-            requests = Request.objects(user=user, status=1)  
+            requests = Request.objects(user=user, status=1)
         print(f"Found {requests.count()} requests for user {user_id} with status=1")
 
         routes = []
         now = datetime.utcnow()
 
         for req in requests:
-
             for route in req.routes:
-
                 if route.travel_date and route.travel_date < now:
                     routes.append({
                         "id": str(route.id),
@@ -1541,4 +1585,9 @@ class UserTripHistoryAPIView(APIView):
                         "transport_type": route.transport_type,
                     })
 
-        return Response({"routes": routes})
+        paginator = self.pagination_class()
+        paginated_routes = paginator.paginate_queryset(routes, request)
+
+        return paginator.get_paginated_response({
+            "routes": paginated_routes
+        })
