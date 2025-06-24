@@ -208,9 +208,9 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-# CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = True
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "https://nominatim.openstreetmap.org","http://localhost:8000"]
+# CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "https://nominatim.openstreetmap.org","http://localhost:8000"]
 ALLOWED_HOSTS = ['35.224.163.23', 'localhost', '127.0.0.1']
 
 CHANNEL_LAYERS = {

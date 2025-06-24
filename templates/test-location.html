@@ -104,23 +104,57 @@
       setInterval(sendLocation, 5000);
     };
 
+    // ws.onmessage = (e) => {
+    //   const data = JSON.parse(e.data);
+    //   const coords = data.coordinates.map(Number);
+    //   if (data.user_id !== user_id) {
+    //     if (!otherMarker) {
+    //       otherMarker = L.marker(coords, {icon: redIcon()}).addTo(map).bindPopup(`${data.role}<br>${data.location_text}`);
+    //     } else {
+    //       otherMarker.setLatLng(coords);
+    //       otherMarker.getPopup().setContent(`${data.role}<br>${data.location_text}`);
+    //     }
+
+    //     if (myMarker && otherMarker) {
+    //       const group = new L.featureGroup([myMarker, otherMarker]);
+    //       map.fitBounds(group.getBounds().pad(0.5));
+    //     }
+    //   }
+    // };
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
       const coords = data.coordinates.map(Number);
-      if (data.user_id !== user_id) {
+
+      // Логируем ВСЕ пришедшие локации — и свои, и чужие
+      console.log(`[📥] Локация (${data.role}):`, coords, data.location_text);
+
+      // Рисуем на карте
+      if (data.user_id === user_id) {
+        // Это моя локация, обновляем myMarker
+        if (!myMarker) {
+          myMarker = L.marker(coords).addTo(map).bindPopup("Вы<br>" + data.location_text).openPopup();
+          map.panTo(coords);
+        } else {
+          myMarker.setLatLng(coords);
+          myMarker.getPopup().setContent("Вы<br>" + data.location_text);
+        }
+      } else {
+        // Локация другой стороны, обновляем otherMarker
         if (!otherMarker) {
           otherMarker = L.marker(coords, {icon: redIcon()}).addTo(map).bindPopup(`${data.role}<br>${data.location_text}`);
         } else {
           otherMarker.setLatLng(coords);
           otherMarker.getPopup().setContent(`${data.role}<br>${data.location_text}`);
         }
+      }
 
-        if (myMarker && otherMarker) {
-          const group = new L.featureGroup([myMarker, otherMarker]);
-          map.fitBounds(group.getBounds().pad(0.5));
-        }
+      // Автоматический масштаб по двум маркерам
+      if (myMarker && otherMarker) {
+        const group = new L.featureGroup([myMarker, otherMarker]);
+        map.fitBounds(group.getBounds().pad(0.5));
       }
     };
+
 
     async function sendLocation() {
       if (!navigator.geolocation) {

@@ -59,12 +59,15 @@ class Car_user(Document):
 
 class UserLocation(Document):
     user = ReferenceField(User, required=True, unique=True)
-    coordinates = ListField(StringField(), default=list)  # [latitude, longitude]
+    # coordinates = ListField(StringField(), default=list)  # [latitude, longitude]
+    coordinates = ListField(FloatField(), default=list)  
+
     location_text = StringField()
     updated_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
 
 class DriverLocation(Document):
     user = ReferenceField(User, required=True, unique=True)
-    coordinates = ListField(StringField(), default=list)  # [latitude, longitude]
+    coordinates = ListField(FloatField(), default=list) 
+    # coordinates = ListField(StringField(), default=list)  # [latitude, longitude]
     location_text = StringField()
     updated_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
