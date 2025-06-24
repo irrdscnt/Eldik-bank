@@ -1527,6 +1527,29 @@ class UserTripHistoryAPIView(APIView):
                 type=openapi.TYPE_INTEGER,
                 default=10
             ),
+            openapi.Parameter(
+                'start_date',
+                openapi.IN_QUERY,
+                description="Начальная дата фильтрации (YYYY-MM-DD)",
+                type=openapi.TYPE_STRING,
+                format='date',
+                required=False
+            ),
+            openapi.Parameter(
+                'end_date',
+                openapi.IN_QUERY,
+                description="Конечная дата фильтрации (YYYY-MM-DD)",
+                type=openapi.TYPE_STRING,
+                format='date',
+                required=False
+            ),
+            openapi.Parameter(
+                'completed',
+                openapi.IN_QUERY,
+                description="Фильтр по завершенности поездки (true для завершенных, false для незавершенных)",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
         ],
         responses={
             200: openapi.Response(
@@ -1551,6 +1574,7 @@ class UserTripHistoryAPIView(APIView):
                 )
             ),
             404: "Пользователь не найден",
+            400: "Неверный формат даты или параметров"
         }
     )
     def get(self, request, user_id):
@@ -1559,31 +1583,66 @@ class UserTripHistoryAPIView(APIView):
         except DoesNotExist:
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        completed = request.query_params.get('completed')
+
+        try:
+            if start_date:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            if end_date:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').replace(
+                    hour=23, minute=59, second=59, tzinfo=timezone.utc
+                )
+            if start_date and end_date and start_date > end_date:
+                return Response({"detail": "start_date cannot be later than end_date"},
+                                status=status.HTTP_400_BAD_REQUEST)
+        except ValueError:
+            return Response({"detail": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if completed is not None:
+            if completed.lower() not in ['true', 'false']:
+                return Response({"detail": "Invalid completed parameter. Use true or false."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            completed = completed.lower() == 'true'
+
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+
         if user.role == Role.DRIVER:
-            requests = Request.objects(driver=user, status=1)
+            requests = Request.objects.filter(driver=user, status=1)
         else:
-            requests = Request.objects(user=user, status=1)
+            requests = Request.objects.filter(user=user, status=1)
+
+        if start_date:
+            requests = requests.filter(date__gte=start_date)
+        if end_date:
+            requests = requests.filter(date__lte=end_date)
 
         routes = []
-        now = datetime.utcnow()
-
-        for req in requests: Add
-        commentMore
-        actions
-        for route in req.routes:
-            if route.travel_date and route.travel_date < now:
+        for req in requests:
+            for route in req.routes:
+                if route.travel_date:
+                    if start_date and route.travel_date < start_date:
+                        continue
+                    if end_date and route.travel_date > end_date:
+                        continue
+                if completed is not None:
+                    if completed and not route.end_time:
+                        continue
+                    if not completed and route.end_time:
+                        continue
                 routes.append({
                     "id": str(route.id),
-                    "goal": route.goal,
-                    "departure": route.departure,
-                    "destination": route.destination,
-                    "departure_coordinates": route.departure_coordinates,
-                    "destination_coordinates": route.destination_coordinates,
-                    "time": route.time,
+                    "goal": route.goal or "",
+                    "departure": route.departure or "",
+                    "destination": route.destination or "",
+                    "departure_coordinates": route.departure_coordinates or [],
+                    "destination_coordinates": route.destination_coordinates or [],
+                    "time": route.time or "",
                     "start_time": route.start_time.isoformat() if route.start_time else None,
                     "end_time": route.end_time.isoformat() if route.end_time else None,
                     "travel_date": route.travel_date.isoformat() if route.travel_date else None,
-                    "transport_type": route.transport_type,
+                    "transport_type": route.transport_type or "",
                 })
 
         paginator = self.pagination_class()
