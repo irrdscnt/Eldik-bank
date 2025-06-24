@@ -1527,30 +1527,6 @@ class UserTripHistoryAPIView(APIView):
                 type=openapi.TYPE_INTEGER,
                 default=10
             ),
-            openapi.Parameter(
-                'date_from',
-                openapi.IN_QUERY,
-                description="Фильтр по дате начала (YYYY-MM-DD)",
-                type=openapi.TYPE_STRING,
-                format='date',
-                required=False
-            ),
-            openapi.Parameter(
-                'date_to',
-                openapi.IN_QUERY,
-                description="Фильтр по дате окончания (YYYY-MM-DD)",
-                type=openapi.TYPE_STRING,
-                format='date',
-                required=False
-            ),
-            openapi.Parameter(
-                'status',
-                openapi.IN_QUERY,
-                description="Фильтр по статусу поездки (0 - не завершена, 1 - завершена)",
-                type=openapi.TYPE_INTEGER,
-                enum=[0, 1],
-                required=False
-            ),
         ],
         responses={
             200: openapi.Response(
@@ -1568,10 +1544,6 @@ class UserTripHistoryAPIView(APIView):
                                 properties={
                                     'id': openapi.Schema(type=openapi.TYPE_STRING),
                                     'goal': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'status': openapi.Schema(
-                                        type=openapi.TYPE_INTEGER,
-                                        description="0 - не завершена, 1 - завершена"
-                                    ),
                                 }
                             )
                         )
@@ -1579,7 +1551,6 @@ class UserTripHistoryAPIView(APIView):
                 )
             ),
             404: "Пользователь не найден",
-            400: "Некорректные параметры запроса"
         }
     )
     def get(self, request, user_id):
@@ -1587,23 +1558,6 @@ class UserTripHistoryAPIView(APIView):
             user = User.objects.get(id=user_id)
         except DoesNotExist:
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        date_from_str = request.query_params.get('date_from')
-        date_to_str = request.query_params.get('date_to')
-        status_filter = request.query_params.get('status')
-
-        try:
-            date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else None
-            date_to = datetime.strptime(date_to_str, '%Y-%m-%d') if date_to_str else None
-            if status_filter is not None:
-                status_filter = int(status_filter)
-                if status_filter not in [0, 1]:
-                    raise ValueError
-        except ValueError:
-            return Response(
-                {"detail": "Invalid parameters. Date format should be YYYY-MM-DD and status should be 0 or 1."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
         if user.role == Role.DRIVER:
             requests = Request.objects(driver=user, status=1)
@@ -1613,19 +1567,11 @@ class UserTripHistoryAPIView(APIView):
         routes = []
         now = datetime.utcnow()
 
-        for req in requests:
-            for route in req.routes:
-                if not route.travel_date or route.travel_date >= now:
-                    continue
-
-                if date_from and route.travel_date.date() < date_from.date():
-                    continue
-                if date_to and route.travel_date.date() > date_to.date():
-                    continue
-
-                if status_filter is not None and route.status != status_filter:
-                    continue
-
+        for req in requests: Add
+        commentMore
+        actions
+        for route in req.routes:
+            if route.travel_date and route.travel_date < now:
                 routes.append({
                     "id": str(route.id),
                     "goal": route.goal,
@@ -1638,7 +1584,6 @@ class UserTripHistoryAPIView(APIView):
                     "end_time": route.end_time.isoformat() if route.end_time else None,
                     "travel_date": route.travel_date.isoformat() if route.travel_date else None,
                     "transport_type": route.transport_type,
-                    "status": route.status,
                 })
 
         paginator = self.pagination_class()

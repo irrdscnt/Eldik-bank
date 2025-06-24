@@ -50,14 +50,10 @@ class Route(Document):
     end_time = DateTimeField(null=True)
     travel_date = DateTimeField(null=True)
     transport_type = StringField(choices=['passenger', 'cargo', 'light'], null=True)
-    status = IntField(default=0, choices=[(0, 'Not completed'), (1, 'Completed')])
 
     def __str__(self):
         return f"Route from {self.departure} to {self.destination}"
 
-    def save(self, *args, **kwargs):
-        self.status = 1 if self.end_time is not None else 0
-        super().save(*args, **kwargs)
 
     def mark_as_frequent(self, threshold=5):
         if self.usage_count >= threshold:
