@@ -120,7 +120,8 @@ class RequestSerializer(serializers.Serializer):
         representation["id"] = str(instance.id)
         representation["user"] = str(instance.user.id)
         representation["user_name"] = str(instance.user.name)
-        representation["driver_name"] = str(instance.driver.name)
+        representation["driver_name"] = str(instance.driver.name) if instance.driver else None
+        route_objects = instance.routes
         representation["driver"] = str(instance.driver.id) if instance.driver else None
         route_objects = instance.routes
         representation['routes'] = RouteSerializer(route_objects, many=True).data
