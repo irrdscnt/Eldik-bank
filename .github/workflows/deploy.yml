@@ -1,0 +1,70 @@
+name: Deploy Django Backend to Google Cloud VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy backend to VM
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
+            echo "Connected to server..."
+
+            PROJECT_DIR="/home/jigit38/rsk_taxi/Eldik-bank"
+            VENV_DIR="$PROJECT_DIR/venv"
+
+            cd "$PROJECT_DIR" || {
+              echo "Error: Project directory not found"
+              exit 1
+            }
+
+            echo "Pulling latest changes..."
+            git pull origin main || {
+              echo "Git pull failed"
+              exit 1
+            }
+
+            echo "Activating virtual environment..."
+            source "$VENV_DIR/bin/activate" || {
+              echo "Failed to activate venv"
+              exit 1
+            }
+
+            echo "Installing Python dependencies..."
+            pip install -r requirements.txt || {
+              echo "Failed to install requirements"
+              exit 1
+            }
+
+            echo "Restarting Gunicorn..."
+            sudo systemctl restart gunicorn.service || {
+              echo "Gunicorn restart failed"
+              exit 1
+            }
+
+            echo "Reloading Nginx..."
+            sudo systemctl reload nginx || {
+              echo "Nginx reload failed"
+              exit 1
+            }
+
+            echo "Backend deployed successfully at $(date)"
+          EOF
