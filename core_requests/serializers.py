@@ -118,8 +118,8 @@ class RequestSerializer(serializers.Serializer):
         status_choices = dict(Request.STATUS_CHOICES)
         representation['status_text'] = status_choices.get(instance.status, "Unknown")
         representation["id"] = str(instance.id)
-        representation["user"] = str(instance.user.id)
-        representation["driver"] = str(instance.driver.id) if instance.driver else None
+        representation["user"] = str(instance.user.name)
+        representation["driver"] = str(instance.driver.name) if instance.driver else None
         route_objects = instance.routes
         representation['routes'] = RouteSerializer(route_objects, many=True).data
         return representation
@@ -203,12 +203,24 @@ class RequestCreateSerializer(serializers.Serializer):
             ).order_by("-usage_count").first()
 
             if existing_route:
-                route_data["usage_count"] = existing_route.usage_count + 1
-                route = existing_route
-                route.update(**route_data)
+                fields_to_compare = ["goal", "time", "departure_coordinates", "destination_coordinates"]
+                is_same = all(
+                    route_data.get(field) == existing_route.__dict__.get(field)
+                    for field in fields_to_compare
+                    if field in route_data
+                )
+
+                if is_same:
+                    existing_route.usage_count += 1
+                    existing_route.save()
+                    route = existing_route
+                else:
+                    route_data["usage_count"] = 1
+                    route = Route.objects.create(**route_data)
             else:
                 route_data["usage_count"] = 1
                 route = Route.objects.create(**route_data)
+
             route_refs.append(route)
 
         request = Request.objects.create(
