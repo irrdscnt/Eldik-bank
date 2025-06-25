@@ -1566,7 +1566,21 @@ class UserTripHistoryAPIView(APIView):
                                 type=openapi.TYPE_OBJECT,
                                 properties={
                                     'id': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'request_id': openapi.Schema(type=openapi.TYPE_STRING),
                                     'goal': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'departure': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'destination': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'departure_coordinates': openapi.Schema(type=openapi.TYPE_ARRAY,
+                                                                            items=openapi.Schema(
+                                                                                type=openapi.TYPE_NUMBER)),
+                                    'destination_coordinates': openapi.Schema(type=openapi.TYPE_ARRAY,
+                                                                              items=openapi.Schema(
+                                                                                  type=openapi.TYPE_NUMBER)),
+                                    'time': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'start_time': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                                    'end_time': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                                    'travel_date': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                                    'transport_type': openapi.Schema(type=openapi.TYPE_STRING),
                                 }
                             )
                         )
@@ -1633,6 +1647,7 @@ class UserTripHistoryAPIView(APIView):
                         continue
                 routes.append({
                     "id": str(route.id),
+                    "request_id": str(req.id),
                     "goal": route.goal or "",
                     "departure": route.departure or "",
                     "destination": route.destination or "",
