@@ -549,54 +549,84 @@ from rest_framework.response import Response
 from rest_framework import status
 from bson import ObjectId
 from django.core.exceptions import ValidationError
+import logging
+logger = logging.getLogger(__name__)
+
+from datetime import datetime, timezone
 
 class GetPairAPIView(APIView):
     def get(self, request):
+        user_id = request.GET.get("user_id")
+        role = request.GET.get("role")
+        logger.info(f"GetPair called with user_id={user_id}, role={role}")
+
+        if not user_id or not role:
+            logger.warning("Missing user_id or role parameter")
+            return Response(
+                {"error": "user_id and role are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
-            user_id = request.GET.get("user_id")
-            role = request.GET.get("role")
+            user_oid = ObjectId(user_id)
+            logger.info(f"Parsed ObjectId: {user_oid}")
+        except Exception as ex:
+            logger.error(f"Invalid user_id format: {ex}")
+            return Response(
+                {"error": "Invalid user_id format"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-            if not user_id or not role:
-                return Response(
-                    {"error": "user_id and role are required"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Проверяем валидность ObjectId
-            try:
-                user_oid = ObjectId(user_id)
-            except:
-                return Response(
-                    {"error": "Invalid user_id format"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
+        try:
             if role == "user":
-                req = Request.objects.get(user=user_oid, status=1)
-                response_data = {
-                    "user_id": str(req.user.id),
-                    "driver_id": str(req.driver.id)
-                }
+                logger.info("Looking for Requests by user")
+                requests = Request.objects(user=user_oid, status=1)
             elif role == "driver":
-                req = Request.objects.get(driver=user_oid, status=1)
-                response_data = {
-                    "user_id": str(req.user.id),
-                    "driver_id": str(req.driver.id)
-                }
+                logger.info("Looking for Requests by driver")
+                requests = Request.objects(driver=user_oid, status=1)
             else:
+                logger.warning(f"Invalid role provided: {role}")
                 return Response(
                     {"error": "Invalid role. Use 'user' or 'driver'"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            if not requests:
+                logger.warning(f"No active Requests found for user_id={user_id}, role={role}")
+                return Response(
+                    {"error": "No active request found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            now = datetime.utcnow()
+
+            def get_request_datetime(req):
+                date_str = req.date  # например "2025-06-28"
+                time_str = req.routes[0].time if req.routes else "00:00"
+                dt_str = f"{date_str} {time_str}"
+                try:
+                    dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+                    return dt
+                except Exception as e:
+                    logger.warning(f"Failed to parse datetime for request {req.id}: {e}")
+                    return datetime.min
+
+            # Выбираем заявку с ближайшим временем к now
+            req = min(requests, key=lambda r: abs(get_request_datetime(r) - now))
+
+            logger.info(f"Found Request: id={req.id}")
+
+            dt = get_request_datetime(req)
+
+            response_data = {
+                "user_id": str(req.user.id),
+                "driver_id": str(req.driver.id),
+                "route_datetime": dt.isoformat()
+            }
             return Response(response_data)
 
-        except Request.DoesNotExist:
-            return Response(
-                {"error": "No active request found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
         except Exception as e:
+            logger.exception("Unexpected error in GetPairAPIView")
             return Response(
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

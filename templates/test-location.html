@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Live Location Tracker</title>
+  <title>Live Location Tracker (с логами)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { margin: 0; padding: 0; height: 100%; }
@@ -25,6 +25,7 @@
     <select id="role">
       <option value="user">User</option>
       <option value="driver">Driver</option>
+      <option value="dispetcher">Dispetcher</option>
     </select>
   </label><br><br>
   <label>Ваш ID: <input type="text" id="user_id" /></label><br><br>
@@ -35,23 +36,23 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  let ws, myMarker, otherMarker, map;
+  let ws, myMarker, map;
+  const driverMarkers = {};
 
-    async function getPairId(user_id, role) {
-        try {
-            const response = await fetch(`http://127.0.0.1:8000/api/get-pair/?user_id=${user_id}&role=${role}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return await response.json();
-        } catch (error) {
-            console.error("Ошибка при получении пары:", error);
-            throw error;
-        }
-    }
   function redIcon() {
     return new L.Icon({
-      iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-red.png",
+      iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+      shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+  }
+
+  function greenIcon() {
+    return new L.Icon({
+      iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-green.png",
       shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
       iconSize: [25, 41],
       iconAnchor: [12, 41],
@@ -71,24 +72,29 @@
     }
   }
 
+  async function getPairId(user_id, role) {
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/get-pair/?user_id=${user_id}&role=${role}`);
+      if (!response.ok) return null;
+      const pair = await response.json();
+      console.log(`[getPairId] Получена пара для ${role}:`, pair);
+      return pair;
+    } catch (error) {
+      console.error("❌ Ошибка при получении пары:", error);
+      return null;
+    }
+  }
+
   async function startTracking() {
     const role = document.getElementById("role").value.trim();
     const user_id = document.getElementById("user_id").value.trim();
 
-    if (!user_id) {
+    if (!user_id && role !== "dispetcher") {
       alert("Введите ваш user_id");
       return;
     }
 
-    const pair = await getPairId(user_id, role);
-    const driver_id = pair.driver_id;
-    const real_user_id = pair.user_id;
-
-    if (!driver_id || !real_user_id) {
-      alert("Не удалось получить вторую сторону пары");
-      return;
-    }
-
+    console.log(`▶️ Начало трекинга. Роль: ${role}, ID: ${user_id}`);
     document.getElementById("formContainer").style.display = "none";
 
     map = L.map("map").setView([42.8746, 74.6122], 13);
@@ -96,91 +102,106 @@
       attribution: "© OpenStreetMap contributors"
     }).addTo(map);
 
-    ws = new WebSocket(`ws://127.0.0.1:8000/ws/location/?user_id=${user_id}&driver_id=${driver_id}&role=${role}`);
+    if (role === "dispetcher") {
+      ws = new WebSocket(`ws://127.0.0.1:8000/ws/location/?role=dispetcher`);
+      ws.onopen = () => console.log("🟢 WebSocket диспетчера открыт");
 
-    ws.onopen = () => {
-      console.log("✅ WebSocket подключён");
-      sendLocation();
-      setInterval(sendLocation, 5000);
-    };
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (!data.coordinates) return;
 
-    // ws.onmessage = (e) => {
-    //   const data = JSON.parse(e.data);
-    //   const coords = data.coordinates.map(Number);
-    //   if (data.user_id !== user_id) {
-    //     if (!otherMarker) {
-    //       otherMarker = L.marker(coords, {icon: redIcon()}).addTo(map).bindPopup(`${data.role}<br>${data.location_text}`);
-    //     } else {
-    //       otherMarker.setLatLng(coords);
-    //       otherMarker.getPopup().setContent(`${data.role}<br>${data.location_text}`);
-    //     }
+        console.log("📦 Диспетчер получил данные от водителя:", data);
+        const coords = data.coordinates.map(Number);
+        const isBusy = data.busy === true;
+        const icon = isBusy ? redIcon() : greenIcon();
+        const displayName = data.name || "Без имени";
 
-    //     if (myMarker && otherMarker) {
-    //       const group = new L.featureGroup([myMarker, otherMarker]);
-    //       map.fitBounds(group.getBounds().pad(0.5));
-    //     }
-    //   }
-    // };
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      const coords = data.coordinates.map(Number);
-
-      // Логируем ВСЕ пришедшие локации — и свои, и чужие
-      console.log(`[📥] Локация (${data.role}):`, coords, data.location_text);
-
-      // Рисуем на карте
-      if (data.user_id === user_id) {
-        // Это моя локация, обновляем myMarker
-        if (!myMarker) {
-          myMarker = L.marker(coords).addTo(map).bindPopup("Вы<br>" + data.location_text).openPopup();
-          map.panTo(coords);
+        if (!driverMarkers[data.user_id]) {
+          driverMarkers[data.user_id] = L.marker(coords, { icon })
+            .addTo(map)
+            .bindPopup(`${displayName}<br>${data.location_text || ""}`);
         } else {
-          myMarker.setLatLng(coords);
-          myMarker.getPopup().setContent("Вы<br>" + data.location_text);
+          driverMarkers[data.user_id].setLatLng(coords);
+          driverMarkers[data.user_id].setIcon(icon);
+          driverMarkers[data.user_id]
+            .getPopup()
+            .setContent(`${displayName}<br>${data.location_text || ""}`);
         }
-      } else {
-        // Локация другой стороны, обновляем otherMarker
-        if (!otherMarker) {
-          otherMarker = L.marker(coords, {icon: redIcon()}).addTo(map).bindPopup(`${data.role}<br>${data.location_text}`);
+      };
+    } else {
+      const pair = await getPairId(user_id, role);
+      const wsUrl = `ws://127.0.0.1:8000/ws/location/?user_id=${user_id}&role=${role}`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log(`🟢 WebSocket ${role} (${user_id}) открыт`);
+        sendLocation();
+        setInterval(sendLocation, 5000);
+      };
+
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        console.log(`📨 ${role} (${user_id}) получил сообщение:`, data);
+
+        const coords = data.coordinates.map(Number);
+        const displayName = data.name || data.driver_name || data.role;
+
+        if (data.user_id === user_id) {
+          if (!myMarker) {
+            myMarker = L.marker(coords).addTo(map).bindPopup("Вы<br>" + data.location_text).openPopup();
+            map.panTo(coords);
+          } else {
+            myMarker.setLatLng(coords);
+            myMarker.getPopup().setContent("Вы<br>" + data.location_text);
+          }
         } else {
-          otherMarker.setLatLng(coords);
-          otherMarker.getPopup().setContent(`${data.role}<br>${data.location_text}`);
+          if (!window.otherMarker) {
+            window.otherMarker = L.marker(coords, { icon: redIcon() })
+              .addTo(map)
+              .bindPopup(`${displayName}<br>${data.location_text}`);
+          } else {
+            window.otherMarker.setLatLng(coords);
+            window.otherMarker.getPopup().setContent(`${displayName}<br>${data.location_text}`);
+          }
         }
-      }
 
-      // Автоматический масштаб по двум маркерам
-      if (myMarker && otherMarker) {
-        const group = new L.featureGroup([myMarker, otherMarker]);
-        map.fitBounds(group.getBounds().pad(0.5));
-      }
-    };
+        if (myMarker && window.otherMarker) {
+          const group = new L.featureGroup([myMarker, window.otherMarker]);
+          map.fitBounds(group.getBounds().pad(0.5));
+        }
+      };
 
+      async function sendLocation() {
+        if (!navigator.geolocation) {
+          alert("Геолокация не поддерживается");
+          return;
+        }
 
-    async function sendLocation() {
-      if (!navigator.geolocation) {
-        alert("Геолокация не поддерживается");
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(async pos => {
-        const coords = [pos.coords.latitude, pos.coords.longitude];
-        const location_text = await reverseGeocode(coords[0], coords[1]);
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
+        navigator.geolocation.getCurrentPosition(async pos => {
+          const coords = [pos.coords.latitude, pos.coords.longitude];
+          const location_text = await reverseGeocode(coords[0], coords[1]);
+
+          const payload = {
             user_id: user_id,
             role: role,
             coordinates: coords,
             location_text: location_text
-          }));
-        }
+          };
 
-        if (!myMarker) {
-          myMarker = L.marker(coords).addTo(map).bindPopup("Вы<br>" + location_text).openPopup();
-          map.panTo(coords);
-        } else {
-          myMarker.setLatLng(coords);
-          myMarker.getPopup().setContent("Вы<br>" + location_text);
-        }
-      });
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(payload));
+            console.log("📤 Отправка позиции:", payload);
+          }
+
+          if (!myMarker) {
+            myMarker = L.marker(coords).addTo(map).bindPopup("Вы<br>" + location_text).openPopup();
+            map.panTo(coords);
+          } else {
+            myMarker.setLatLng(coords);
+            myMarker.getPopup().setContent("Вы<br>" + location_text);
+          }
+        });
+      }
     }
   }
 </script>
