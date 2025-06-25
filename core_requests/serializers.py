@@ -118,8 +118,10 @@ class RequestSerializer(serializers.Serializer):
         status_choices = dict(Request.STATUS_CHOICES)
         representation['status_text'] = status_choices.get(instance.status, "Unknown")
         representation["id"] = str(instance.id)
-        representation["user"] = str(instance.user.name)
-        representation["driver"] = str(instance.driver.name) if instance.driver else None
+        representation["user"] = str(instance.user.id)
+        representation["user_name"] = str(instance.user.name)
+        representation["driver_name"] = str(instance.driver.name)
+        representation["driver"] = str(instance.driver.id) if instance.driver else None
         route_objects = instance.routes
         representation['routes'] = RouteSerializer(route_objects, many=True).data
         return representation
