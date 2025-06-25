@@ -1,0 +1,43 @@
+<!-- test_location.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WS Test</title>
+</head>
+<body>
+<h2>WebSocket Location Sender</h2>
+<label>User ID: <input id="userId" type="text" value=""></label><br>
+<label>Role:
+    <select id="role">
+        <option value="user">User</option>
+        <option value="driver">Driver</option>
+    </select>
+</label><br>
+<label>Latitude: <input id="lat" type="text" value="42.87"></label><br>
+<label>Longitude: <input id="lng" type="text" value="74.61"></label><br>
+<button onclick="sendLocation()">Send</button>
+<pre id="output"></pre>
+
+<script>
+const socket = new WebSocket("ws://localhost:8000/ws/location/");
+const output = document.getElementById("output");
+
+socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    output.textContent += "\nПолучено от сервера: " + JSON.stringify(data);
+};
+
+function sendLocation() {
+    const data = {
+        user_id: document.getElementById("userId").value,
+        role: document.getElementById("role").value,
+        lat: document.getElementById("lat").value,
+        lng: document.getElementById("lng").value,
+    };
+    socket.send(JSON.stringify(data));
+    output.textContent += "\nОтправлено: " + JSON.stringify(data);
+}
+</script>
+</body>
+</html>
