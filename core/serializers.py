@@ -1,106 +1,138 @@
 from rest_framework import serializers
-from core.models import User,Trip, Route, Car,Request
+from core_requests.models import *
 from bson import ObjectId
-
-class UserSerializer(serializers.Serializer):
-    id = serializers.CharField(read_only=True)
-    name = serializers.CharField(required=False, allow_blank=True)
-    email = serializers.EmailField(required=True)
-    number = serializers.CharField(required=False, allow_blank=True)
-    password = serializers.CharField(write_only=True)
-    role = serializers.ChoiceField(choices=['user', 'admin', 'driver'], default='user')
-
-    def create(self, validated_data):
-        from django.contrib.auth.hashers import make_password
-        validated_data['password'] = make_password(validated_data['password'])
-        return User.objects.create(**validated_data)
-
-
-
-class RequestSerializer(serializers.Serializer):
-    id = serializers.CharField(read_only=True)
-    goal = serializers.CharField(required=False, allow_blank=True)
-    date = serializers.DateTimeField(required=False, allow_null=True)
-    user = serializers.CharField()  
-    status = serializers.IntegerField(required=False, allow_null=True)
-    comments = serializers.CharField(required=False, allow_blank=True)
-
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        status_choices = dict(Request.STATUS_CHOICES)
-        representation['status_text'] = status_choices.get(instance.status, "Unknown")
-        if "_id" in instance:
-            representation["id"] = str(instance["_id"])
-        return representation
-
-    def create(self, validated_data):
-        # Преобразуем строку user обратно в ObjectId
-        user_id = validated_data.pop("user")
-        validated_data["user"] = User.objects.get(id=ObjectId(user_id))
-        return Request.objects.create(**validated_data)
-
-    def update(self, instance, validated_data):
-        if "user" in validated_data:
-            user_id = validated_data.pop("user")
-            validated_data["user"] = User.objects.get(id=ObjectId(user_id))
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        return instance
+from rest_framework import serializers
+from django.contrib.auth.hashers import make_password
+from bson import ObjectId
+from django.contrib.auth.hashers import check_password
+from core_requests.serializers import *
+from rest_framework import serializers
+from bson import ObjectId
+from authorization.models import User
 
 class CarSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
+    id_car = serializers.IntegerField(read_only=True)  
     name = serializers.CharField(required=False, allow_blank=True)
     car_type = serializers.CharField(required=False, allow_blank=True)
     number = serializers.CharField(required=False, allow_blank=True)
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())  # Ссылка на пользователя
-    status = serializers.IntegerField(required=False, allow_null=True)
+    main_driver = serializers.CharField(required=True, allow_blank=True)
 
     def create(self, validated_data):
-        return Car.objects.create(**validated_data)
+        main_driver_id = validated_data.pop('main_driver', None)
+        main_driver = None
+
+        if main_driver_id:
+            try:
+                main_driver = User.objects.get(id=ObjectId(main_driver_id))
+            except User.DoesNotExist:
+                raise serializers.ValidationError("Главный водитель с таким ID не найден")
+        id_car = get_next_sequence('id_car')
+
+        car = Car.objects.create(id_car=id_car, main_driver=main_driver, **validated_data)
+        return car
 
     def update(self, instance, validated_data):
         instance.name = validated_data.get('name', instance.name)
         instance.car_type = validated_data.get('car_type', instance.car_type)
         instance.number = validated_data.get('number', instance.number)
-        instance.user = validated_data.get('user', instance.user)
-        instance.status = validated_data.get('status', instance.status)
+
+        main_driver_id = validated_data.get('main_driver')
+        if main_driver_id:
+            try:
+                main_driver = User.objects.get(id=ObjectId(main_driver_id))
+                instance.main_driver = main_driver
+            except User.DoesNotExist:
+                raise serializers.ValidationError("Главный водитель с таким ID не найден")
+
         instance.save()
         return instance
-    
-class RouteSerializer(serializers.Serializer):
+
+
+
+class LocationSerializer(serializers.Serializer):
+    latitude = serializers.CharField()
+    longitude = serializers.CharField()
+
+
+from rest_framework import serializers
+from bson import ObjectId
+
+class CarUserSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
-    departure = serializers.CharField(required=False, allow_blank=True)
-    destination = serializers.CharField(required=False, allow_blank=True)
-    waiting_time = serializers.IntegerField(required=False, allow_null=True)
-    request = serializers.PrimaryKeyRelatedField(queryset=Request.objects.all())  # Ссылка на запрос
-    time = serializers.IntegerField(required=False, allow_null=True)
-
+    user = serializers.CharField()
+    car = serializers.CharField()
+    status = serializers.IntegerField(required=False, allow_null=True)  # твой старый статус
+    assignment_status = serializers.IntegerField(required=False, default=AssignmentStatus.ASSIGNED.value)
+    location_history = LocationSerializer(many=True, required=False)
+    created_at = serializers.DateTimeField(read_only=True)
     def create(self, validated_data):
-        return Route.objects.create(**validated_data)
+        user = User.objects.get(id=ObjectId(validated_data['user']))
+        car = Car.objects.get(id=ObjectId(validated_data['car']))
 
+        existing = Car_user.objects(car=car, assignment_status=AssignmentStatus.ASSIGNED.value).first()
+
+        if existing:
+            # Если текущий назначенный водитель совпадает с main_driver, разрешаем создать новую запись без изменений статуса старого
+            if car.main_driver and existing.user.id == car.main_driver.id:
+                return Car_user.objects.create(
+                    user=user,
+                    car=car,
+                    status=validated_data.get("status"),
+                    assignment_status=AssignmentStatus.ASSIGNED.value,
+                    location_history=[Location(**loc) for loc in validated_data.get("location_history", [])]
+                )
+            else:
+                # Если назначенный водитель не совпадает с main_driver,
+                # меняем статус старого на UNASSIGNED
+                existing.assignment_status = AssignmentStatus.UNASSIGNED.value
+                existing.save()
+
+        # Создаём новую запись с статусом ASSIGNED для нового пользователя
+        return Car_user.objects.create(
+            user=user,
+            car=car,
+            status=validated_data.get("status"),
+            assignment_status=AssignmentStatus.ASSIGNED.value,
+            location_history=[Location(**loc) for loc in validated_data.get("location_history", [])]
+        )
     def update(self, instance, validated_data):
-        instance.departure = validated_data.get('departure', instance.departure)
-        instance.destination = validated_data.get('destination', instance.destination)
-        instance.waiting_time = validated_data.get('waiting_time', instance.waiting_time)
-        instance.request = validated_data.get('request', instance.request)
-        instance.time = validated_data.get('time', instance.time)
-        instance.save()
-        return instance
-    
+        if 'car' in validated_data:
+            car = Car.objects.get(id=ObjectId(validated_data['car']))
 
-class TripSerializer(serializers.Serializer):
-    id = serializers.CharField(read_only=True)
-    route = serializers.PrimaryKeyRelatedField(queryset=Route.objects.all())  # Ссылка на маршрут
-    car = serializers.PrimaryKeyRelatedField(queryset=Car.objects.all())  # Ссылка на автомобиль
-    end_time = serializers.DateTimeField(required=False, allow_null=True)
+            # Проверяем, есть ли другой водитель с ASSIGNED статусом для этой машины, кроме текущего инстанса
+            existing = Car_user.objects(
+                car=car,
+                assignment_status=AssignmentStatus.ASSIGNED.value,
+                id__ne=instance.id
+            ).first()
 
-    def create(self, validated_data):
-        return Trip.objects.create(**validated_data)
+            if existing:
+                # Если existing.user — не главный водитель, меняем его статус на UNASSIGNED
+                if car.main_driver is None or existing.user.id != car.main_driver.id:
+                    existing.assignment_status = AssignmentStatus.UNASSIGNED.value
+                    existing.save()
+                # Если existing.user — главный водитель, ничего не меняем
 
-    def update(self, instance, validated_data):
-        instance.route = validated_data.get('route', instance.route)
-        instance.car = validated_data.get('car', instance.car)
-        instance.end_time = validated_data.get('end_time', instance.end_time)
+            # Обновляем машину у текущей записи
+            instance.car = car
+
+        if 'user' in validated_data:
+            instance.user = User.objects.get(id=ObjectId(validated_data['user']))
+
+        if 'location_history' in validated_data:
+            instance.location_history = [Location(**loc) for loc in validated_data['location_history']]
+
+        # Обновляем остальные поля (например, status)
+        for attr, value in validated_data.items():
+            if attr not in ['car', 'user', 'location_history']:
+                setattr(instance, attr, value)
+
+        # По умолчанию при обновлении можно сохранять статус ASSIGNED
+        if 'assignment_status' not in validated_data:
+            instance.assignment_status = AssignmentStatus.ASSIGNED.value
+        else:
+            instance.assignment_status = validated_data['assignment_status']
+
         instance.save()
         return instance

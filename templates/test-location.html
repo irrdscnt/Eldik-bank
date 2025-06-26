@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Live Location Tracker (с логами)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #formContainer {
+      position: absolute;
+      top: 20px; left: 20px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border: 1px solid #ccc;
+      box-shadow: 0 0 5px rgba(0,0,0,0.2);
+    }
+    #map { height: 100vh; }
+  </style>
+</head>
+<body>
+
+<div id="formContainer">
+  <label>Ваша роль:
+    <select id="role">
+      <option value="user">User</option>
+      <option value="driver">Driver</option>
+      <option value="dispetcher">Dispetcher</option>
+    </select>
+  </label><br><br>
+  <label>Ваш ID: <input type="text" id="user_id" /></label><br><br>
+  <button onclick="startTracking()">Старт</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  let ws, myMarker, map;
+  const driverMarkers = {};
+
+  function redIcon() {
+    return new L.Icon({
+      iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+      shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+  }
+
+  function greenIcon() {
+    return new L.Icon({
+      iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-green.png",
+      shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+  }
+
+  async function reverseGeocode(lat, lon) {
+    try {
+      const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      if (!resp.ok) throw new Error("Ошибка запроса");
+      const data = await resp.json();
+      return data.display_name || "Неизвестное место";
+    } catch {
+      return "Неизвестное место";
+    }
+  }
+
+  async function getPairId(user_id, role) {
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/get-pair/?user_id=${user_id}&role=${role}`);
+      if (!response.ok) return null;
+      const pair = await response.json();
+      console.log(`[getPairId] Получена пара для ${role}:`, pair);
+      return pair;
+    } catch (error) {
+      console.error("❌ Ошибка при получении пары:", error);
+      return null;
+    }
+  }
+
+  async function startTracking() {
+    const role = document.getElementById("role").value.trim();
+    const user_id = document.getElementById("user_id").value.trim();
+
+    if (!user_id && role !== "dispetcher") {
+      alert("Введите ваш user_id");
+      return;
+    }
+
+    console.log(`▶️ Начало трекинга. Роль: ${role}, ID: ${user_id}`);
+    document.getElementById("formContainer").style.display = "none";
+
+    map = L.map("map").setView([42.8746, 74.6122], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors"
+    }).addTo(map);
+
+    if (role === "dispetcher") {
+      ws = new WebSocket(`ws://127.0.0.1:8000/ws/location/?role=dispetcher`);
+      ws.onopen = () => console.log("🟢 WebSocket диспетчера открыт");
+
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (!data.coordinates) return;
+
+        console.log("📦 Диспетчер получил данные от водителя:", data);
+        const coords = data.coordinates.map(Number);
+        const isBusy = data.busy === true;
+        const icon = isBusy ? redIcon() : greenIcon();
+        const displayName = data.name || "Без имени";
+
+        if (!driverMarkers[data.user_id]) {
+          driverMarkers[data.user_id] = L.marker(coords, { icon })
+            .addTo(map)
+            .bindPopup(`${displayName}<br>${data.location_text || ""}`);
+        } else {
+          driverMarkers[data.user_id].setLatLng(coords);
+          driverMarkers[data.user_id].setIcon(icon);
+          driverMarkers[data.user_id]
+            .getPopup()
+            .setContent(`${displayName}<br>${data.location_text || ""}`);
+        }
+      };
+    } else {
+      const pair = await getPairId(user_id, role);
+      const wsUrl = `ws://127.0.0.1:8000/ws/location/?user_id=${user_id}&role=${role}`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log(`🟢 WebSocket ${role} (${user_id}) открыт`);
+        sendLocation();
+        setInterval(sendLocation, 5000);
+      };
+
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        console.log(`📨 ${role} (${user_id}) получил сообщение:`, data);
+
+        const coords = data.coordinates.map(Number);
+        const displayName = data.name || data.driver_name || data.role;
+
+        if (data.user_id === user_id) {
+          if (!myMarker) {
+            myMarker = L.marker(coords).addTo(map).bindPopup("Вы<br>" + data.location_text).openPopup();
+            map.panTo(coords);
+          } else {
+            myMarker.setLatLng(coords);
+            myMarker.getPopup().setContent("Вы<br>" + data.location_text);
+          }
+        } else {
+          if (!window.otherMarker) {
+            window.otherMarker = L.marker(coords, { icon: redIcon() })
+              .addTo(map)
+              .bindPopup(`${displayName}<br>${data.location_text}`);
+          } else {
+            window.otherMarker.setLatLng(coords);
+            window.otherMarker.getPopup().setContent(`${displayName}<br>${data.location_text}`);
+          }
+        }
+
+        if (myMarker && window.otherMarker) {
+          const group = new L.featureGroup([myMarker, window.otherMarker]);
+          map.fitBounds(group.getBounds().pad(0.5));
+        }
+      };
+
+      async function sendLocation() {
+        if (!navigator.geolocation) {
+          alert("Геолокация не поддерживается");
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(async pos => {
+          const coords = [pos.coords.latitude, pos.coords.longitude];
+          const location_text = await reverseGeocode(coords[0], coords[1]);
+
+          const payload = {
+            user_id: user_id,
+            role: role,
+            coordinates: coords,
+            location_text: location_text
+          };
+
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(payload));
+            console.log("📤 Отправка позиции:", payload);
+          }
+
+          if (!myMarker) {
+            myMarker = L.marker(coords).addTo(map).bindPopup("Вы<br>" + location_text).openPopup();
+            map.panTo(coords);
+          } else {
+            myMarker.setLatLng(coords);
+            myMarker.getPopup().setContent("Вы<br>" + location_text);
+          }
+        });
+      }
+    }
+  }
+</script>
+
+</body>
+</html>

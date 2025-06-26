@@ -1,65 +1,73 @@
-from mongoengine import Document, StringField, EmailField, IntField, EnumField, DateTimeField
+from datetime import datetime
+
+from mongoengine import Document, StringField, EmailField, IntField, EnumField, DateTimeField, ListField
 from enum import Enum
 from mongoengine import ReferenceField
+from datetime import datetime, timezone
 
-class Role(Enum):
-    USER = 'user'
-    ADMIN = 'admin'
-    DRIVER = 'driver'
+from mongoengine import Document, ReferenceField, StringField, DateTimeField
+from authorization.models import *
+from enum import IntEnum
+import random
+import string
+from mongoengine import *
 
-class User(Document):
-    name = StringField(max_length=255, null=True)
-    email = EmailField(required=True, unique=True)
-    number = StringField(max_length=15, null=True)
-    password = StringField(max_length=255)  
-    role = EnumField(Role, default=Role.USER)
 
-    def __str__(self):
-        return self.name
-    
-
-class Request(Document):
-    STATUS_CHOICES = (
-        (0, 'Created'),
-        (1, 'In Progress'),
-        (2, 'Completed'),
-        (3, 'Rejected'),
-    )
-
-    goal = StringField(null=True)
-    date = DateTimeField(null=True)
-    user = ReferenceField(User, reverse_delete_rule=2)  # CASCADE
-    status = IntField(choices=STATUS_CHOICES, default=0)  # Значение по умолчанию: 0
-    comments = StringField(null=True,default=0)
-
-    def __str__(self):
-        return f"Request by {self.user.name}"
-    
 
 class Car(Document):
     name = StringField(max_length=255, null=True)
     car_type = StringField(max_length=50, null=True)
     number = StringField(max_length=20, null=True)
-    user = ReferenceField(User, reverse_delete_rule=2)  # CASCADE
-    status = IntField(null=True)
+    created_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
+    main_driver = ReferenceField(User, null=True,reverse_delete_rule=NULLIFY)
+    id_car = IntField(unique=True)  
 
     def __str__(self):
         return self.name
 
-class Route(Document):
-    departure = StringField(max_length=255, null=True)
-    destination = StringField(max_length=255, null=True)
-    waiting_time = IntField(null=True)
-    request = ReferenceField(Request, reverse_delete_rule=2)  # CASCADE
-    time = IntField(null=True)
+class Counter(Document):
+    name = StringField(required=True, unique=True)
+    seq = IntField(default=0)
 
+    meta = {'collection': 'counters'}
+
+def get_next_sequence(name):
+    counter = Counter.objects(name=name).modify(upsert=True, new=True, inc__seq=1)
+    return counter.seq
+
+class Location(EmbeddedDocument):
+    latitude = StringField()
+    longitude = StringField()
+
+class AssignmentStatus(IntEnum):
+    UNASSIGNED = 0
+    ASSIGNED = 1
+
+
+class Car_user(Document):
+    user = ReferenceField(User, reverse_delete_rule=2)
+    car = ReferenceField(Car, reverse_delete_rule=2)
+    status = IntField(null=True)
+    location_history = ListField(EmbeddedDocumentField(Location))
+
+    assignment_status = IntField(default=AssignmentStatus.ASSIGNED.value)  
+    created_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
+    
     def __str__(self):
-        return f"Route from {self.departure} to {self.destination}"
+        return self.status
 
-class Trip(Document):
-    route = ReferenceField('Route', reverse_delete_rule=2)  # CASCADE
-    car = ReferenceField(Car, reverse_delete_rule=2)  # CASCADE
-    end_time = DateTimeField(null=True)
 
-    def __str__(self):
-        return f"Trip with {self.car.name}"
+class UserLocation(Document):
+    user = ReferenceField(User, required=True, unique=True)
+    # coordinates = ListField(StringField(), default=list)  # [latitude, longitude]
+    coordinates = ListField(FloatField(), default=list)  
+
+    location_text = StringField()
+    updated_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
+
+class DriverLocation(Document):
+    user = ReferenceField(User, required=True, unique=True)
+    coordinates = ListField(FloatField(), default=list) 
+    # coordinates = ListField(StringField(), default=list)  # [latitude, longitude]
+    location_text = StringField()
+    updated_at = DateTimeField(default=lambda: datetime.now(timezone.utc))
