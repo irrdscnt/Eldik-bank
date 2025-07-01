@@ -10,6 +10,20 @@ import logging
 from authorization.models import User
 
 logger = logging.getLogger(__name__)
+def get_earliest_route_datetime(req):
+    date_obj = datetime.strptime(str(req.date), "%Y-%m-%d").date()
+    times = []
+    for route in req.routes:
+        time_str = getattr(route, "time", None)
+        if not time_str:
+            continue
+        try:
+            time_obj = datetime.strptime(time_str, "%H:%M").time()
+            times.append(datetime.combine(date_obj, time_obj))
+        except Exception:
+            continue
+    return min(times) if times else datetime.combine(date_obj, datetime.min.time())
+
 
 class LocationConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -170,25 +184,36 @@ class LocationConsumer(AsyncWebsocketConsumer):
         logger.debug(f"is_driver_busy({driver_id}) -> {busy}")
         return busy
 
+    from datetime import datetime
     @database_sync_to_async
     def get_pair_ids(self, user_id, role):
         try:
             if role == "user":
-                req = Request.objects(user=user_id, status=1).first()
+                requests = Request.objects(user=user_id, status=1).all()
             elif role == "driver":
-                req = Request.objects(driver=user_id, status=1).first()
+                requests = Request.objects(driver=user_id, status=1).all()
             else:
-                logger.debug(f"get_pair_ids called with invalid role {role}")
                 return None, None
 
-            if req:
-                logger.debug(f"Found active Request for role {role}: user={req.user.id}, driver={req.driver.id}")
-                return str(req.user.id), str(req.driver.id)
-            logger.debug(f"No active Request found for user_id={user_id}, role={role}")
-            return None, None
+            now = datetime.now()
+
+            future_requests = [
+                req for req in requests 
+                if get_earliest_route_datetime(req) >= now
+            ]
+
+            if not future_requests:
+                return None, None
+
+            future_requests.sort(key=get_earliest_route_datetime)
+
+            req = future_requests[0]
+            return str(req.user.id), str(req.driver.id)
+
         except Exception as e:
             logger.exception("Exception in get_pair_ids")
             return None, None
+
 
     @database_sync_to_async
     def save_location(self, model, user_id, coordinates, location_text):

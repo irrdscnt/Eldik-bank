@@ -544,15 +544,56 @@ class DriverLoadReportExcel(APIView):
 #     except Request.DoesNotExist:
 #         return JsonResponse({"error": "No active request found"}, status=404)
 
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from bson import ObjectId
-from django.core.exceptions import ValidationError
 import logging
+from datetime import datetime, timezone, timedelta
+from core_requests.models import Request
 logger = logging.getLogger(__name__)
 
-from datetime import datetime, timezone
+import pytz
+BISHKEK_TZ = pytz.timezone("Asia/Bishkek")
+
+def parse_request_datetime(req):
+    try:
+        date_str = req.date
+        time_str = req.routes[0].time if req.routes and req.routes[0].time else "00:00"
+        logger.info(f"Parsing datetime from request {req.id}: date='{date_str}', time='{time_str}'")
+        dt_str = f"{date_str} {time_str}"
+        naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+        aware_dt = BISHKEK_TZ.localize(naive_dt)
+        logger.info(f"Parsed datetime (with timezone): {aware_dt.isoformat()}")
+        return aware_dt
+    except Exception as e:
+        logger.warning(f"Failed to parse datetime for request {req.id}: {e}")
+        return datetime.max.replace(tzinfo=BISHKEK_TZ)
+
+
+def get_closest_request_by_role(user_oid, role):
+    now = datetime.now(BISHKEK_TZ)
+
+    if role == "user":
+        logger.info("Looking for Requests by user")
+        requests = Request.objects(user=user_oid, status=1)
+    elif role == "driver":
+        logger.info("Looking for Requests by driver")
+        requests = Request.objects(driver=user_oid, status=1)
+    else:
+        raise ValueError("Invalid role")
+
+    if not requests:
+        logger.warning(f"No active Requests found for {role}={user_oid}")
+        return None
+
+    future_requests = [r for r in requests if parse_request_datetime(r) >= now]
+    if not future_requests:
+        return None
+
+    return min(future_requests, key=parse_request_datetime)
+
 
 class GetPairAPIView(APIView):
     def get(self, request):
@@ -562,72 +603,31 @@ class GetPairAPIView(APIView):
 
         if not user_id or not role:
             logger.warning("Missing user_id or role parameter")
-            return Response(
-                {"error": "user_id and role are required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "user_id and role are required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user_oid = ObjectId(user_id)
             logger.info(f"Parsed ObjectId: {user_oid}")
         except Exception as ex:
             logger.error(f"Invalid user_id format: {ex}")
-            return Response(
-                {"error": "Invalid user_id format"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Invalid user_id format"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            if role == "user":
-                logger.info("Looking for Requests by user")
-                requests = Request.objects(user=user_oid, status=1)
-            elif role == "driver":
-                logger.info("Looking for Requests by driver")
-                requests = Request.objects(driver=user_oid, status=1)
-            else:
-                logger.warning(f"Invalid role provided: {role}")
-                return Response(
-                    {"error": "Invalid role. Use 'user' or 'driver'"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            req = get_closest_request_by_role(user_oid, role)
+            if not req:
+                logger.warning(f"No future active request found for user_id={user_id}, role={role}")
+                return Response({"error": "No future active request found"}, status=status.HTTP_404_NOT_FOUND)
 
-            if not requests:
-                logger.warning(f"No active Requests found for user_id={user_id}, role={role}")
-                return Response(
-                    {"error": "No active request found"},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+            dt = parse_request_datetime(req)
+            logger.info(f"Found future Request: id={req.id}")
 
-            now = datetime.utcnow()
-
-            def get_request_datetime(req):
-                date_str = req.date  # например "2025-06-28"
-                time_str = req.routes[0].time if req.routes else "00:00"
-                dt_str = f"{date_str} {time_str}"
-                try:
-                    dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
-                    return dt
-                except Exception as e:
-                    logger.warning(f"Failed to parse datetime for request {req.id}: {e}")
-                    return datetime.min
-
-            # Выбираем заявку с ближайшим временем к now
-            req = min(requests, key=lambda r: abs(get_request_datetime(r) - now))
-
-            logger.info(f"Found Request: id={req.id}")
-
-            dt = get_request_datetime(req)
-
-            response_data = {
+            return Response({
+                "request_id": str(req.id),
                 "user_id": str(req.user.id),
-                "driver_id": str(req.driver.id),
+                "driver_id": str(req.driver.id), 
                 "route_datetime": dt.isoformat()
-            }
-            return Response(response_data)
+            })
 
         except Exception as e:
             logger.exception("Unexpected error in GetPairAPIView")
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
